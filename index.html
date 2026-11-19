@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" class="dark scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050505" />
+    <meta
+      name="description"
+      content="lui.z Network Tools: cyberpunk online Ping, Traceroute, DNS Lookup, WHOIS, Port Check, Reverse Lookup, Proxy Checker, Country by IP, Bandwidth Meter, Subnet Calculator, and Unit Converter."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>lui.z | TOOLS</title>
+  </head>
+  <body class="bg-black text-[#e0e0e0] font-inter antialiased overflow-x-hidden cyber-grid scroll-smooth">
+    <div class="scanline" aria-hidden="true"></div>
+    <div class="fixed inset-0 pointer-events-none z-[100] border border-white/5" aria-hidden="true"></div>
+
+    <main class="relative px-4 sm:px-6 pt-6 pb-8 overflow-hidden">
+      <div class="pointer-events-none absolute top-1/4 -left-20 w-72 h-72 bg-neon-yellow/10 rounded-full blur-[100px]" aria-hidden="true"></div>
+      <div class="pointer-events-none absolute bottom-1/4 -right-20 w-72 h-72 bg-[#00ffff]/10 rounded-full blur-[100px]" aria-hidden="true"></div>
+
+      <div class="max-w-6xl xl:max-w-[1240px] mx-auto relative z-10 flex flex-col gap-6">
+        <h1 class="sr-only">lui.z Network Diagnostics &amp; Utility Suite</h1>
+
+        <!-- Tool Navigation Grid -->
+        <section aria-label="Network Tools Menu" class="rounded-xl border border-white/10 bg-black/55 backdrop-blur-sm p-3.5 sm:p-4">
+          <div id="tool-tabs" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2" role="tablist"></div>
+        </section>
+
+        <!-- Active Tool Workspace -->
+        <section aria-label="Active Tool Workspace" class="rounded-xl border border-[#00ffff]/30 bg-black/65 backdrop-blur-sm overflow-hidden shadow-[0_0_36px_rgba(0,255,255,0.06)]">
+          <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/10 bg-[#050505]">
+            <div class="flex items-center gap-3">
+              <span id="workspace-icon" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#f3eb2c]/12 border border-[#f3eb2c]/40 text-[#f3eb2c]"></span>
+              <div>
+                <h2 id="workspace-title" class="font-fira text-sm sm:text-base font-bold uppercase tracking-[0.16em] text-white">--</h2>
+                <p id="workspace-desc" class="text-xs text-[#999] mt-0.5">--</p>
+              </div>
+            </div>
+            <div id="workspace-presets" class="flex flex-wrap items-center gap-1.5"></div>
+          </div>
+
+          <div class="p-5 sm:p-6 flex flex-col gap-6">
+            <div id="tool-controls"></div>
+            <div id="tool-output" class="flex flex-col gap-5"></div>
+          </div>
+        </section>
+
+        <!-- CLI Quick Reference -->
+        <section id="cli-section" aria-label="CLI Endpoint Reference" class="rounded-xl border border-[#f3eb2c]/25 bg-black/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="px-2 py-0.5 rounded bg-[#f3eb2c]/15 border border-[#f3eb2c]/40 font-fira text-[10px] font-bold uppercase tracking-widest text-[#f3eb2c] shrink-0">CLI</span>
+            <code id="cli-snippet" class="font-fira text-xs text-[#e0e0e0] truncate select-all">curl -s https://tools.lui.z/api/me</code>
+          </div>
+          <button
+            id="copy-cli-btn"
+            type="button"
+            class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-[#050505] px-3 py-1.5 font-fira text-[11px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer shrink-0"
+          >
+            <span id="copy-cli-label">COPY CMD</span>
+          </button>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>

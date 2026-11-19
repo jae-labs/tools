@@ -1,0 +1,55 @@
+name: prisma-deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: prisma-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - region: us-east-1
+            app: jae-tools-us-east-1
+          - region: us-west-1
+            app: jae-tools-us-west-1
+          - region: eu-west-3
+            app: jae-tools-eu-west-3
+          - region: eu-central-1
+            app: jae-tools
+          - region: ap-northeast-1
+            app: jae-tools-ap-northeast-1
+          - region: ap-southeast-1
+            app: jae-tools-ap-southeast-1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - name: Quality checks and build for ${{ matrix.region }}
+        env:
+          PRISMA_REGION: ${{ matrix.region }}
+        run: |
+          npm ci
+          npm run check
+      - name: Deploy ${{ matrix.region }} to Prisma Compute
+        env:
+          PRISMA_REGION: ${{ matrix.region }}
+        uses: prisma/cloud-deploy-action@v1
+        with:
+          install-command: npm ci
+          build-command: npm run build
+          name: ${{ matrix.app }}
