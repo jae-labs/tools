@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-<a href="https://tools.justanother.engineer"><img src="https://img.shields.io/website?url=https%3A%2F%2Ftools.justanother.engineer&label=website" alt="Website"></a>
+<a href="https://cg5l6gtazzu04lvpkz4ycr8t.fra.prisma.build"><img src="https://img.shields.io/website?url=https%3A%2F%2Ftools.justanother.engineer&label=website" alt="Website"></a>
 <a href="https://github.com/jae-labs/tools/actions/workflows/prisma-deploy.yml"><img src="https://github.com/jae-labs/tools/actions/workflows/prisma-deploy.yml/badge.svg" alt="Deploy"></a>
 <a href="https://github.com/jae-labs/tools/issues"><img src="https://img.shields.io/github/issues/jae-labs/tools" alt="GitHub issues"></a>
 <a href="https://github.com/jae-labs/tools/stargazers"><img src="https://img.shields.io/github/stars/jae-labs/tools" alt="GitHub stars"></a>
