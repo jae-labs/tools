@@ -14,6 +14,7 @@ import {
   CodeXml,
   Copy,
   EthernetPort,
+  Euro,
   FileSearch,
   Fingerprint,
   Gauge,
@@ -75,6 +76,15 @@ import {
   type EpochConversionResult,
   type EpochPrecision,
 } from '../shared/epoch.ts';
+import {
+  DEFAULT_CONTRACTOR_INPUTS,
+  DEFAULT_TAX_INPUTS,
+  calculateContractComparison,
+  calculateIrishTax2026,
+  type ContractorInputs,
+  type FilingStatus,
+  type TaxInputs,
+} from '../shared/irishtax.ts';
 import { sortJsonString } from '../shared/jsonsort.ts';
 import { convertIpv4ToIpv6 } from '../shared/ipv4to6.ts';
 import { convertXmlToJson } from '../shared/xml2json.ts';
@@ -149,7 +159,8 @@ type ToolId =
   | 'ascii'
   | 'ipv4to6'
   | 'units'
-  | 'hook';
+  | 'hook'
+  | 'irishtax';
 
 type ToolCategoryId = 'network' | 'dns-security' | 'calculators' | 'datetime' | 'dev';
 
@@ -558,6 +569,22 @@ const TOOLS: ToolMeta[] = [
     presets: [],
     cliTemplate: (origin) =>
       `curl -s -X POST "${origin}/hook/demo" -H "Content-Type: application/json" -d '{"hello":"world"}'`,
+  },
+  {
+    id: 'irishtax',
+    category: 'calculators',
+    name: 'Irish Salary Calculator',
+    shortName: 'Irish Tax 2026',
+    desc: 'Estimate 2026 Irish PAYE, PRSI, USC, CGT, pension relief, and Permanent vs Umbrella / Limited Company contractor take-home pay.',
+    icon: Euro,
+    keywords: ['ireland', 'irish', 'salary', 'tax', 'paye', 'usc', 'prsi', 'cgt', 'contractor', 'umbrella', 'net pay', '2026'],
+    presets: [
+      { label: '€45,000', value: '45000' },
+      { label: '€72,000', value: '72000' },
+      { label: '€100,000', value: '100000' },
+      { label: '€140,000', value: '140000' },
+    ],
+    cliTemplate: (origin) => `curl -s "${origin}/api/irishtax?salary=72000&filing=single"`,
   },
 ];
 
@@ -5876,6 +5903,581 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   connectStream();
 }
 
+function renderDonutSvg(
+  segments: Array<{ name: string; value: number; color: string; percentage: number }>,
+  activeIndex: number,
+  euroFmt: Intl.NumberFormat,
+  pctFmt: Intl.NumberFormat,
+): string {
+  const size = 210;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 76;
+  const strokeWidth = 22;
+  const circumference = 2 * Math.PI * r;
+  const total = Math.max(
+    1,
+    segments.reduce((sum, s) => sum + s.value, 0),
+  );
+  const gapPx = segments.length > 1 ? 3 : 0;
+  let offset = 0;
+
+  const circles = segments
+    .map((seg, idx) => {
+      const frac = seg.value / total;
+      const arcLen = Math.max(0, frac * circumference - gapPx);
+      const dashOffset = -offset;
+      offset += frac * circumference;
+      const isActive = idx === activeIndex;
+      return `
+        <circle
+          cx="${cx}"
+          cy="${cy}"
+          r="${r}"
+          fill="none"
+          stroke="${seg.color}"
+          stroke-width="${isActive ? strokeWidth + 3 : strokeWidth}"
+          stroke-dasharray="${arcLen.toFixed(2)} ${(circumference - arcLen).toFixed(2)}"
+          stroke-dashoffset="${dashOffset.toFixed(2)}"
+          opacity="${activeIndex < 0 || isActive ? '1' : '0.45'}"
+          data-donut-idx="${idx}"
+          class="cursor-pointer transition-all duration-150"
+        />
+      `;
+    })
+    .join('');
+
+  const active = segments[activeIndex] ?? segments[0];
+  return `
+    <div class="relative w-[210px] h-[210px] mx-auto shrink-0">
+      <svg viewBox="0 0 ${size} ${size}" class="w-full h-full -rotate-90" role="img" aria-label="Salary breakdown chart">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="${strokeWidth}" />
+        ${circles}
+      </svg>
+      ${
+        active
+          ? `
+            <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center px-4">
+              <span class="font-fira text-[10px] uppercase tracking-[0.14em] text-[#999] truncate max-w-[125px]">${escapeHtml(active.name)}</span>
+              <span class="mt-0.5 font-fira text-base font-bold text-white">${escapeHtml(euroFmt.format(active.value))}</span>
+              <span class="font-fira text-[11px] text-[#00ffff]">${escapeHtml(pctFmt.format(active.percentage))}%</span>
+            </div>
+          `
+          : ''
+      }
+    </div>
+  `;
+}
+
+function mountIrishTax(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  const euroFmt = new Intl.NumberFormat('en-IE', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  });
+  const wholeFmt = new Intl.NumberFormat('en-IE', { maximumFractionDigits: 0 });
+  const pctFmt = new Intl.NumberFormat('en-IE', { maximumFractionDigits: 1 });
+
+  const taxInputs: TaxInputs = { ...DEFAULT_TAX_INPUTS };
+  const contractInputs: ContractorInputs = { ...DEFAULT_CONTRACTOR_INPUTS };
+  let activeChartIdx = 0;
+  let mobilePeriod: 'annual' | 'monthly' = 'annual';
+
+  const sliderField = (
+    id: string,
+    label: string,
+    valueText: string,
+    min: number,
+    max: number,
+    step: number,
+    value: number,
+    title: string,
+    accentClass = 'text-[#f3eb2c]',
+    disabled = false,
+  ) => `
+    <label class="block min-w-0 space-y-1.5" title="${escapeHtml(title)}">
+      <span class="flex items-center justify-between gap-2 font-fira text-[11px] text-[#b0b0b0]">
+        <span class="inline-flex items-center gap-1.5 min-w-0">
+          <span class="truncate">${escapeHtml(label)}</span>
+          <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-white/20 text-[9px] text-[#777] shrink-0" title="${escapeHtml(title)}">?</span>
+        </span>
+        <span id="${id}-val" class="shrink-0 font-bold ${accentClass}">${escapeHtml(valueText)}</span>
+      </span>
+      <input
+        id="${id}"
+        type="range"
+        min="${min}"
+        max="${max}"
+        step="${step}"
+        value="${value}"
+        ${disabled ? 'disabled' : ''}
+        class="cyber-range"
+      />
+    </label>
+  `;
+
+  controlsEl.innerHTML = `
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 rounded-xl border border-white/10 bg-[#050505] p-4">
+        <div class="flex-1 min-w-0">
+          <label for="tool-primary-input" class="block font-fira text-[10px] font-bold uppercase tracking-[0.18em] text-[#00ffff] mb-1.5">
+            ANNUAL BASE SALARY (€)
+          </label>
+          <input
+            id="tool-primary-input"
+            type="number"
+            min="0"
+            max="1000000"
+            step="500"
+            value="${taxInputs.employmentIncome}"
+            class="cyber-input"
+          />
+        </div>
+        <div class="w-full sm:w-64 shrink-0">
+          <label for="ie-filing" class="block font-fira text-[10px] font-bold uppercase tracking-[0.18em] text-[#858585] mb-1.5">
+            FILING STATUS
+          </label>
+          <select id="ie-filing" class="cyber-select w-full">
+            <option value="single">Single</option>
+            <option value="marriedJoint">Married — Jointly Assessed</option>
+            <option value="marriedSeparate">Married — Separately Assessed</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-white/10 bg-[#050505] p-4 sm:p-5 flex flex-col gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          ${sliderField('ie-salary-range', 'Employment Income', `€${wholeFmt.format(taxInputs.employmentIncome)}`, 0, 300_000, 1_000, taxInputs.employmentIncome, 'Annual gross base salary before tax and pension.')}
+          ${sliderField('ie-bonus', 'Annual Bonus', `€${wholeFmt.format(taxInputs.bonus)}`, 0, 100_000, 500, taxInputs.bonus, 'Cash bonus taxed via PAYE, PRSI, and USC.')}
+          ${sliderField('ie-benefits', 'Taxable Benefits (BIK / mo)', `€${wholeFmt.format(taxInputs.taxableBenefits / 12)}`, 0, 10_000, 50, taxInputs.taxableBenefits / 12, 'Monthly employer-paid taxable benefits such as health insurance.')}
+          ${sliderField('ie-stocks', 'Stock / Capital Gains', `€${wholeFmt.format(taxInputs.stockGains)}`, 0, 200_000, 1_000, taxInputs.stockGains, 'Realised capital gains taxed at 33% above the €1,270 annual exemption.')}
+          ${sliderField('ie-other', 'Other Income', `€${wholeFmt.format(taxInputs.otherIncome)}`, 0, 100_000, 500, taxInputs.otherIncome, 'Additional taxable non-PAYE income.')}
+          ${sliderField('ie-rental', 'Net Rental Income', `€${wholeFmt.format(taxInputs.rentalIncome)}`, 0, 100_000, 500, taxInputs.rentalIncome, 'Annual net taxable rental income.')}
+          ${sliderField('ie-age', 'Age', String(taxInputs.age), 18, 75, 1, taxInputs.age, 'Determines your age-related pension tax relief percentage (15%–40%).', 'text-white')}
+          ${sliderField('ie-children', 'Children', String(taxInputs.numberOfChildren), 0, 10, 1, taxInputs.numberOfChildren, 'Number of dependent children (for reference).', 'text-white')}
+          ${sliderField('ie-pension', 'Pension Contribution (/ mo)', `€${wholeFmt.format(taxInputs.pensionContribution / 12)}`, 0, 5_000, 50, taxInputs.pensionContribution / 12, 'Monthly employee pension contribution eligible for income tax relief up to age limit.', 'text-emerald-400')}
+        </div>
+
+        <div id="ie-partner-fields" class="hidden grid-cols-1 sm:grid-cols-3 gap-4 border-t border-white/10 pt-4">
+          ${sliderField('ie-partner-salary', 'Partner Annual Income', `€${wholeFmt.format(taxInputs.partnerEmploymentIncome)}`, 0, 300_000, 1_000, taxInputs.partnerEmploymentIncome, 'Partner annual gross PAYE income for joint assessment (band transfer up to €35,000).')}
+          ${sliderField('ie-partner-age', 'Partner Age', String(taxInputs.partnerAge), 18, 75, 1, taxInputs.partnerAge, 'Determines partner pension relief cap.', 'text-white')}
+          ${sliderField('ie-partner-pension', 'Partner Pension (/ mo)', `€${wholeFmt.format(taxInputs.partnerPensionContribution / 12)}`, 0, 5_000, 50, taxInputs.partnerPensionContribution / 12, 'Partner monthly pension contribution.', 'text-emerald-400')}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/10 pt-3">
+          <label id="ie-partner-paye-wrap" class="hidden items-center gap-2 font-fira text-xs text-[#bbb] cursor-pointer">
+            <input id="ie-partner-paye" type="checkbox" checked class="accent-[#f3eb2c]" />
+            <span>Partner is PAYE worker (+€2,000 employee credit)</span>
+          </label>
+          <label class="inline-flex items-center gap-2 font-fira text-xs text-[#bbb] cursor-pointer">
+            <input id="ie-self-employed" type="checkbox" class="accent-[#f3eb2c]" />
+            <span>Self-employed (PRSI on all income, no PAYE employee credit)</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const salaryInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
+  const salaryRange = controlsEl.querySelector<HTMLInputElement>('#ie-salary-range')!;
+  const filingEl = controlsEl.querySelector<HTMLSelectElement>('#ie-filing')!;
+  const partnerFieldsEl = controlsEl.querySelector<HTMLElement>('#ie-partner-fields')!;
+  const partnerPayeWrap = controlsEl.querySelector<HTMLElement>('#ie-partner-paye-wrap')!;
+
+  const syncPartnerVisibility = () => {
+    const isJoint = taxInputs.filingStatus === 'marriedJoint';
+    partnerFieldsEl.classList.toggle('hidden', !isJoint);
+    partnerFieldsEl.classList.toggle('grid', isJoint);
+    partnerPayeWrap.classList.toggle('hidden', !isJoint);
+    partnerPayeWrap.classList.toggle('inline-flex', isJoint);
+  };
+
+  // Static shell for output so contractor sliders keep drag focus while updating
+  outputEl.innerHTML = `
+    <div id="ie-permanent-output" class="flex flex-col gap-5"></div>
+
+    <div class="rounded-xl border border-white/10 bg-[#050505] p-4 sm:p-5 flex flex-col gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="font-fira text-xs font-bold uppercase tracking-[0.18em] text-white">CONTRACT DAY-RATE EQUIVALENT</h3>
+          <p class="text-xs text-[#777] mt-0.5">Compare PAYE permanent take-home against Umbrella payroll and Limited company day rates (11.25% employer PRSI accounted for).</p>
+        </div>
+        <label class="inline-flex items-center gap-2 font-fira text-xs text-[#bbb] cursor-pointer">
+          <input id="ie-match-pkg" type="checkbox" class="accent-[#f3eb2c]" />
+          <span>Match permanent package</span>
+        </label>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        ${sliderField('ie-c-rate', 'Daily Rate', `€${wholeFmt.format(contractInputs.dailyRate)}`, 0, 2_000, 25, contractInputs.dailyRate, 'Contractor gross daily rate.')}
+        ${sliderField('ie-c-days', 'Billable Days / yr', String(contractInputs.billableDays), 120, 260, 1, contractInputs.billableDays, 'Working days billed per year (220 ≈ 44 weeks).', 'text-white')}
+        ${sliderField('ie-c-umbrella', 'Umbrella Fee (/ mo)', `€${wholeFmt.format(contractInputs.umbrellaFeeMonthly)}`, 0, 300, 5, contractInputs.umbrellaFeeMonthly, 'Monthly umbrella company management fee.')}
+        ${sliderField('ie-c-accountancy', 'Accountancy (/ yr)', `€${wholeFmt.format(contractInputs.accountancy)}`, 0, 8_000, 100, contractInputs.accountancy, 'Annual Ltd company accountancy fees.')}
+        ${sliderField('ie-c-insurance', 'Insurance (/ yr)', `€${wholeFmt.format(contractInputs.insurance)}`, 0, 8_000, 100, contractInputs.insurance, 'Professional indemnity / public liability insurance.')}
+        ${sliderField('ie-c-health', 'Health Cover (/ yr)', `€${wholeFmt.format(contractInputs.health)}`, 0, 8_000, 100, contractInputs.health, 'Annual private health cover cost.')}
+        ${sliderField('ie-c-pension', 'Contractor Pension (/ yr)', `€${wholeFmt.format(contractInputs.pension)}`, 0, 30_000, 500, contractInputs.pension, 'Annual company pension contribution.', 'text-emerald-400')}
+      </div>
+
+      <div id="ie-contract-cards" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+    </div>
+
+    <div id="ie-details-output"></div>
+  `;
+
+  const permanentOutEl = outputEl.querySelector<HTMLElement>('#ie-permanent-output')!;
+  const contractCardsEl = outputEl.querySelector<HTMLElement>('#ie-contract-cards')!;
+  const detailsOutEl = outputEl.querySelector<HTMLElement>('#ie-details-output')!;
+  const cHealthInput = outputEl.querySelector<HTMLInputElement>('#ie-c-health')!;
+  const cPensionInput = outputEl.querySelector<HTMLInputElement>('#ie-c-pension')!;
+  const cHealthVal = outputEl.querySelector<HTMLElement>('#ie-c-health-val')!;
+  const cPensionVal = outputEl.querySelector<HTMLElement>('#ie-c-pension-val')!;
+
+  const syncContractPackageLock = () => {
+    const locked = contractInputs.matchPermanentPackage;
+    cHealthInput.disabled = locked;
+    cPensionInput.disabled = locked;
+    const hVal = locked ? taxInputs.taxableBenefits : contractInputs.health;
+    const pVal = locked ? taxInputs.pensionContribution : contractInputs.pension;
+    cHealthInput.value = String(Math.min(8_000, hVal));
+    cPensionInput.value = String(Math.min(30_000, pVal));
+    cHealthVal.textContent = `€${wholeFmt.format(hVal)}`;
+    cPensionVal.textContent = `€${wholeFmt.format(pVal)}`;
+  };
+
+  const renderContractCards = (res: ReturnType<typeof calculateIrishTax2026>) => {
+    const cmp = calculateContractComparison(taxInputs, res, contractInputs);
+    const isJoint = taxInputs.filingStatus === 'marriedJoint' && cmp.partnerIncome > 0;
+    const takeHomeLabel = isJoint ? 'Household take-home / yr' : 'Take-home pay / yr';
+
+    contractCardsEl.innerHTML = `
+      <div class="rounded-xl border border-white/10 bg-black/60 p-4">
+        <p class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">PERMANENT PAYE</p>
+        <p class="mt-2 font-fira text-2xl font-black text-emerald-400">${escapeHtml(euroFmt.format(cmp.permanentNet))}</p>
+        <p class="font-fira text-[11px] text-[#777]">${escapeHtml(takeHomeLabel)} · ${escapeHtml(euroFmt.format(cmp.permanentNet / 12))}/mo</p>
+        <div class="mt-3 pt-3 border-t border-white/10 space-y-1 font-fira text-xs">
+          <div class="flex justify-between"><span class="text-[#777]">Annual income</span><span class="text-white">${escapeHtml(euroFmt.format(cmp.permanentIncome))}</span></div>
+          <div class="flex justify-between"><span class="text-[#777]">Deduction rate</span><span class="text-rose-400">${escapeHtml(pctFmt.format(cmp.permanentDeductionRate * 100))}%</span></div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-[#00ffff]/25 bg-black/60 p-4">
+        <p class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#00ffff]">UMBRELLA PAYROLL</p>
+        <p class="mt-2 font-fira text-2xl font-black text-emerald-400">${escapeHtml(euroFmt.format(cmp.umbrellaNet))}</p>
+        <p class="font-fira text-[11px] text-[#777]">${escapeHtml(takeHomeLabel)} · ${escapeHtml(euroFmt.format(cmp.umbrellaNet / 12))}/mo</p>
+        <div class="mt-3 pt-3 border-t border-white/10 space-y-1 font-fira text-xs">
+          <div class="flex justify-between"><span class="text-[#777]">Contract amount</span><span class="text-white">${escapeHtml(euroFmt.format(cmp.revenue))}</span></div>
+          <div class="flex justify-between"><span class="text-[#777]">Deduction rate</span><span class="text-rose-400">${escapeHtml(pctFmt.format(cmp.umbrellaDeductionRate * 100))}%</span></div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-[#f3eb2c]/30 bg-black/60 p-4">
+        <p class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#f3eb2c]">LIMITED COMPANY</p>
+        <p class="mt-2 font-fira text-2xl font-black text-emerald-400">${escapeHtml(euroFmt.format(cmp.limitedCompanyNet))}</p>
+        <p class="font-fira text-[11px] text-[#777]">${escapeHtml(takeHomeLabel)} · ${escapeHtml(euroFmt.format(cmp.limitedCompanyNet / 12))}/mo</p>
+        <div class="mt-3 pt-3 border-t border-white/10 space-y-1 font-fira text-xs">
+          <div class="flex justify-between"><span class="text-[#777]">Contract amount</span><span class="text-white">${escapeHtml(euroFmt.format(cmp.revenue))}</span></div>
+          <div class="flex justify-between"><span class="text-[#777]">Deduction rate</span><span class="text-rose-400">${escapeHtml(pctFmt.format(cmp.limitedCompanyDeductionRate * 100))}%</span></div>
+        </div>
+      </div>
+    `;
+  };
+
+  const renderOutput = () => {
+    const res = calculateIrishTax2026(taxInputs);
+    syncContractPackageLock();
+    const totalPension =
+      taxInputs.pensionContribution +
+      (taxInputs.filingStatus === 'marriedJoint' ? taxInputs.partnerPensionContribution : 0);
+    const totalRelief = res.pensionReliefEligible + res.partnerPensionReliefEligible;
+
+    const rawSegments = [
+      { name: 'Net Pay', value: res.annualNetPay, color: '#34d399' },
+      { name: 'Income Tax', value: res.incomeTax, color: '#f3eb2c' },
+      { name: 'PRSI', value: res.prsi, color: '#00ffff' },
+      { name: 'USC', value: res.usc, color: '#fbbf24' },
+      { name: 'Pension', value: totalPension, color: '#a78bfa' },
+      { name: 'CGT', value: res.cgt, color: '#fb7185' },
+    ].filter((s) => s.value > 0);
+    const segTotal = Math.max(
+      1,
+      rawSegments.reduce((sum, s) => sum + s.value, 0),
+    );
+    const segments = rawSegments.map((s) => ({
+      ...s,
+      percentage: (s.value / segTotal) * 100,
+    }));
+    if (activeChartIdx >= segments.length) activeChartIdx = 0;
+
+    const breakdownRows: Array<{ label: string; value: number; tone: string; highlight?: boolean }> = [
+      { label: 'Cash income', value: res.cashIncome, tone: 'text-white' },
+      { label: 'Income tax (PAYE)', value: -res.incomeTax, tone: 'text-rose-400' },
+      { label: 'PRSI (4.2375% blended)', value: -res.prsi, tone: 'text-rose-400' },
+      { label: 'Universal Social Charge (USC)', value: -res.usc, tone: 'text-rose-400' },
+      { label: 'Capital Gains Tax (CGT)', value: -res.cgt, tone: 'text-rose-400' },
+      { label: 'Pension / AVC', value: -totalPension, tone: 'text-purple-300' },
+      { label: 'Pension eligible for income-tax relief', value: totalRelief, tone: 'text-[#888]' },
+      { label: 'Take-home pay', value: res.annualNetPay, tone: 'text-emerald-400', highlight: true },
+    ];
+
+    const divisor = mobilePeriod === 'monthly' ? 12 : 1;
+
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      snippetEl.textContent = `curl -s "${window.location.origin}/api/irishtax?salary=${Math.round(taxInputs.employmentIncome)}&filing=${taxInputs.filingStatus}"`;
+    }
+
+    permanentOutEl.innerHTML = `
+      <!-- Hero Summary + Donut -->
+      <div class="rounded-xl border border-[#00ffff]/25 bg-[#050505] overflow-hidden">
+        <div class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_240px] gap-5 p-5 items-center">
+          <div class="min-w-0">
+            <p class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#00ffff]">TAKE-HOME PAY (2026)</p>
+            <p class="mt-1.5 font-fira text-3xl sm:text-4xl font-black text-emerald-400 tabular-nums">${escapeHtml(euroFmt.format(res.annualNetPay))}<span class="text-xs font-normal text-[#777] ml-2">/ year</span></p>
+            <p class="mt-1 font-fira text-xs text-[#858585]">From <span class="text-white font-semibold">${escapeHtml(euroFmt.format(res.cashIncome))}</span> cash income before deductions</p>
+
+            <div class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5 border-t border-white/10 pt-4">
+              <div>
+                <p class="font-fira text-[10px] uppercase tracking-wider text-[#777]">Monthly Net</p>
+                <p class="mt-0.5 font-fira text-base font-bold text-[#f3eb2c]">${escapeHtml(euroFmt.format(res.annualNetPay / 12))}</p>
+              </div>
+              <div>
+                <p class="font-fira text-[10px] uppercase tracking-wider text-[#777]">Total Tax</p>
+                <p class="mt-0.5 font-fira text-base font-bold text-rose-400">${escapeHtml(euroFmt.format(res.totalTax))}</p>
+              </div>
+              <div>
+                <p class="font-fira text-[10px] uppercase tracking-wider text-[#777]">Deduction Rate</p>
+                <p class="mt-0.5 font-fira text-base font-bold text-[#00ffff]">${escapeHtml(pctFmt.format(res.effectiveRate * 100))}%</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="ie-donut-wrap">
+            ${renderDonutSvg(segments, activeChartIdx, euroFmt, pctFmt)}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 border-t border-white/10 bg-black/50 p-3">
+          ${segments
+            .map(
+              (seg, idx) => `
+                <button
+                  type="button"
+                  data-legend-idx="${idx}"
+                  style="border-color: ${idx === activeChartIdx ? seg.color : `${seg.color}55`}; background: ${idx === activeChartIdx ? `${seg.color}22` : `${seg.color}0d`};"
+                  class="flex items-center justify-between gap-2 rounded-full border px-3 py-1.5 font-fira text-[11px] transition-all cursor-pointer text-white"
+                >
+                  <span class="truncate">${escapeHtml(seg.name)}</span>
+                  <span class="font-bold shrink-0" style="color:${seg.color}">${escapeHtml(pctFmt.format(seg.percentage))}%</span>
+                </button>
+              `,
+            )
+            .join('')}
+        </div>
+      </div>
+
+      <!-- Full Breakdown Table -->
+      <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+        <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-white/10 bg-black/60">
+          <span class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#858585]">BREAKDOWN</span>
+          <div class="inline-flex sm:hidden rounded-lg border border-white/15 bg-black p-0.5">
+            <button type="button" data-ie-period="annual" class="px-2.5 py-1 rounded font-fira text-[10px] uppercase cursor-pointer ${mobilePeriod === 'annual' ? 'bg-[#f3eb2c]/15 text-[#f3eb2c]' : 'text-[#888]'}">Annual</button>
+            <button type="button" data-ie-period="monthly" class="px-2.5 py-1 rounded font-fira text-[10px] uppercase cursor-pointer ${mobilePeriod === 'monthly' ? 'bg-[#f3eb2c]/15 text-[#f3eb2c]' : 'text-[#888]'}">Monthly</button>
+          </div>
+        </div>
+
+        <div class="sm:hidden divide-y divide-white/8">
+          ${breakdownRows
+            .map(
+              (row) => `
+                <div class="flex items-center justify-between gap-3 px-4 py-2.5 font-fira text-xs ${row.highlight ? 'bg-emerald-500/8 font-bold' : ''}">
+                  <span class="text-[#bbb]">${escapeHtml(row.label)}</span>
+                  <span class="${row.tone} shrink-0">${escapeHtml(euroFmt.format(row.value / divisor))}</span>
+                </div>
+              `,
+            )
+            .join('')}
+        </div>
+
+        <div class="hidden sm:block overflow-x-auto">
+          <table class="w-full text-left font-fira text-xs">
+            <thead class="bg-black/40 text-[10px] uppercase tracking-[0.18em] text-[#777]">
+              <tr>
+                <th class="px-4 py-2.5">Line Item</th>
+                <th class="px-4 py-2.5 text-right">Annual</th>
+                <th class="px-4 py-2.5 text-right">Monthly</th>
+                <th class="px-4 py-2.5 text-right">Weekly</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/8">
+              ${breakdownRows
+                .map(
+                  (row) => `
+                    <tr class="${row.highlight ? 'bg-emerald-500/8 font-bold' : ''}">
+                      <td class="px-4 py-2.5 text-[#ccc]">${escapeHtml(row.label)}</td>
+                      <td class="px-4 py-2.5 text-right ${row.tone}">${escapeHtml(euroFmt.format(row.value))}</td>
+                      <td class="px-4 py-2.5 text-right ${row.tone}">${escapeHtml(euroFmt.format(row.value / 12))}</td>
+                      <td class="px-4 py-2.5 text-right ${row.tone}">${escapeHtml(euroFmt.format(row.value / 52))}</td>
+                    </tr>
+                  `,
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    renderContractCards(res);
+
+    detailsOutEl.innerHTML = `
+      <details class="rounded-xl border border-white/10 bg-[#050505] p-4">
+        <summary class="cursor-pointer font-fira text-xs font-bold uppercase tracking-[0.18em] text-[#00ffff]">
+          2026 IRISH TAX BANDS, USC BREAKDOWN &amp; SOURCES
+        </summary>
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 font-fira text-xs">
+          <div class="rounded-lg border border-white/10 bg-black/60 p-3 space-y-1.5">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-[#f3eb2c]">Income Tax (20% / 40%)</p>
+            <p class="text-[#aaa]">Standard Band: <span class="text-white">${escapeHtml(euroFmt.format(res.standardBand))}</span></p>
+            <p class="text-[#aaa]">20% Tax: <span class="text-white">${escapeHtml(euroFmt.format(res.standardRateTax))}</span></p>
+            <p class="text-[#aaa]">40% Tax: <span class="text-white">${escapeHtml(euroFmt.format(res.higherRateTax))}</span></p>
+            <p class="text-[#aaa]">Tax Credits: <span class="text-emerald-400">-${escapeHtml(euroFmt.format(res.taxCredits))}</span></p>
+          </div>
+          <div class="rounded-lg border border-white/10 bg-black/60 p-3 space-y-1.5">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-[#00ffff]">USC Bands (Primary)</p>
+            ${res.uscBands
+              .map(
+                (b) =>
+                  `<div class="flex justify-between text-[#aaa]"><span>${escapeHtml(b.label)} (${pctFmt.format(b.rate * 100)}%)</span><span class="text-white">${escapeHtml(euroFmt.format(b.amount))}</span></div>`,
+              )
+              .join('')}
+          </div>
+          <div class="rounded-lg border border-white/10 bg-black/60 p-3 space-y-2">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Official Revenue.ie Sources</p>
+            <p class="text-[#888] leading-relaxed">Estimate uses announced 2026 headline rates (Class A blended PRSI 4.2375%, CGT 33% over €1,270, pension relief capped at €115k).</p>
+            <div class="flex flex-wrap gap-2 pt-1">
+              <a href="https://www.revenue.ie/en/corporate/press-office/budget-information/previous-years/2026/budget-summary.pdf" target="_blank" rel="noreferrer" class="px-2.5 py-1 rounded border border-white/15 bg-black text-[10px] text-[#00ffff] hover:border-[#00ffff]/60">Revenue Budget 2026 summary ↗</a>
+              <a href="https://www.revenue.ie/en/jobs-and-pensions/calculating-your-income-tax/tax-rate-band.aspx" target="_blank" rel="noreferrer" class="px-2.5 py-1 rounded border border-white/15 bg-black text-[10px] text-[#00ffff] hover:border-[#00ffff]/60">Revenue tax rate bands ↗</a>
+            </div>
+          </div>
+        </div>
+      </details>
+    `;
+
+    // Interactive chart legend & donut segments
+    permanentOutEl.querySelectorAll<HTMLElement>('[data-legend-idx], [data-donut-idx]').forEach((el) => {
+      const idx = Number(el.dataset.legendIdx ?? el.dataset.donutIdx ?? '0');
+      el.addEventListener('click', () => {
+        if (activeChartIdx !== idx) {
+          activeChartIdx = idx;
+          renderOutput();
+        }
+      });
+    });
+
+    permanentOutEl.querySelectorAll<HTMLButtonElement>('[data-ie-period]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.iePeriod as 'annual' | 'monthly';
+        if (next && next !== mobilePeriod) {
+          mobilePeriod = next;
+          renderOutput();
+        }
+      });
+    });
+  };
+
+  // Bind contractor sliders & checkbox once (never lose drag focus)
+  const bindContractRange = (
+    id: string,
+    key: keyof ContractorInputs,
+    format: (v: number) => string,
+  ) => {
+    const el = outputEl.querySelector<HTMLInputElement>(`#${id}`);
+    const valEl = outputEl.querySelector<HTMLElement>(`#${id}-val`);
+    el?.addEventListener('input', () => {
+      const v = Number(el.value) || 0;
+      (contractInputs[key] as number) = v;
+      if (valEl) valEl.textContent = format(v);
+      renderContractCards(calculateIrishTax2026(taxInputs));
+    });
+  };
+  bindContractRange('ie-c-rate', 'dailyRate', (v) => `€${wholeFmt.format(v)}`);
+  bindContractRange('ie-c-days', 'billableDays', (v) => String(v));
+  bindContractRange('ie-c-umbrella', 'umbrellaFeeMonthly', (v) => `€${wholeFmt.format(v)}`);
+  bindContractRange('ie-c-accountancy', 'accountancy', (v) => `€${wholeFmt.format(v)}`);
+  bindContractRange('ie-c-insurance', 'insurance', (v) => `€${wholeFmt.format(v)}`);
+  bindContractRange('ie-c-health', 'health', (v) => `€${wholeFmt.format(v)}`);
+  bindContractRange('ie-c-pension', 'pension', (v) => `€${wholeFmt.format(v)}`);
+
+  outputEl.querySelector<HTMLInputElement>('#ie-match-pkg')?.addEventListener('change', (e) => {
+    contractInputs.matchPermanentPackage = (e.target as HTMLInputElement).checked;
+    syncContractPackageLock();
+    renderContractCards(calculateIrishTax2026(taxInputs));
+  });
+
+  // Bind permanent inputs
+  salaryInput.addEventListener('input', () => {
+    const val = Math.max(0, Number(salaryInput.value) || 0);
+    taxInputs.employmentIncome = val;
+    salaryRange.value = String(Math.min(300_000, val));
+    controlsEl.querySelector('#ie-salary-range-val')!.textContent = `€${wholeFmt.format(val)}`;
+    renderOutput();
+  });
+
+  salaryRange.addEventListener('input', () => {
+    const val = Number(salaryRange.value) || 0;
+    taxInputs.employmentIncome = val;
+    salaryInput.value = String(val);
+    controlsEl.querySelector('#ie-salary-range-val')!.textContent = `€${wholeFmt.format(val)}`;
+    renderOutput();
+  });
+
+  const bindTaxSlider = (
+    id: string,
+    onVal: (val: number) => void,
+    format: (val: number) => string,
+  ) => {
+    const input = controlsEl.querySelector<HTMLInputElement>(`#${id}`);
+    const valEl = controlsEl.querySelector<HTMLElement>(`#${id}-val`);
+    input?.addEventListener('input', () => {
+      const v = Number(input.value) || 0;
+      onVal(v);
+      if (valEl) valEl.textContent = format(v);
+      renderOutput();
+    });
+  };
+
+  bindTaxSlider('ie-bonus', (v) => (taxInputs.bonus = v), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-benefits', (v) => (taxInputs.taxableBenefits = v * 12), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-stocks', (v) => (taxInputs.stockGains = v), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-other', (v) => (taxInputs.otherIncome = v), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-rental', (v) => (taxInputs.rentalIncome = v), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-age', (v) => (taxInputs.age = v), (v) => String(v));
+  bindTaxSlider('ie-children', (v) => (taxInputs.numberOfChildren = v), (v) => String(v));
+  bindTaxSlider('ie-pension', (v) => (taxInputs.pensionContribution = v * 12), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-partner-salary', (v) => (taxInputs.partnerEmploymentIncome = v), (v) => `€${wholeFmt.format(v)}`);
+  bindTaxSlider('ie-partner-age', (v) => (taxInputs.partnerAge = v), (v) => String(v));
+  bindTaxSlider('ie-partner-pension', (v) => (taxInputs.partnerPensionContribution = v * 12), (v) => `€${wholeFmt.format(v)}`);
+
+  filingEl.addEventListener('change', () => {
+    taxInputs.filingStatus = filingEl.value as FilingStatus;
+    syncPartnerVisibility();
+    renderOutput();
+  });
+
+  controlsEl.querySelector<HTMLInputElement>('#ie-partner-paye')?.addEventListener('change', (e) => {
+    taxInputs.partnerPaye = (e.target as HTMLInputElement).checked;
+    renderOutput();
+  });
+
+  controlsEl.querySelector<HTMLInputElement>('#ie-self-employed')?.addEventListener('change', (e) => {
+    taxInputs.selfEmployed = (e.target as HTMLInputElement).checked;
+    renderOutput();
+  });
+
+  syncPartnerVisibility();
+  renderOutput();
+}
+
 // --- NAVIGATION & BOOTSTRAP ---
 
 function setPickerOpen(open: boolean): void {
@@ -6092,6 +6694,9 @@ function selectTool(id: ToolId, updateHash = false): void {
       break;
     case 'hook':
       mountHook(controlsEl, outputEl);
+      break;
+    case 'irishtax':
+      mountIrishTax(controlsEl, outputEl);
       break;
   }
 }

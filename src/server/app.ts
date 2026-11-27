@@ -11,6 +11,11 @@ import {
   parseDurationString,
   type SlaPeriodId,
 } from '../shared/sla.ts';
+import {
+  DEFAULT_TAX_INPUTS,
+  calculateIrishTax2026,
+  type FilingStatus,
+} from '../shared/irishtax.ts';
 import { calculateSubnet } from '../shared/subnet.ts';
 import { createGeoLookup, type GeoInfo } from './geo.ts';
 import { extractClientIp, normalizeIp, resolvePublicTarget } from './ip.ts';
@@ -770,6 +775,39 @@ export function createApp(options: AppOptions = {}) {
             const precision = validPrecisions.has(precisionRaw) ? precisionRaw : 'auto';
             const rawTs = tsParam !== null && tsParam.trim() !== '' ? tsParam : String(Math.floor(Date.now() / 1000));
             return Response.json(convertEpochToDate(rawTs, precision), { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/irishtax') {
+            const num = (key: string, fallback: number) => {
+              const raw = url.searchParams.get(key);
+              if (raw === null || raw.trim() === '') return fallback;
+              const parsed = Number(raw);
+              return Number.isFinite(parsed) ? parsed : fallback;
+            };
+            const filingRaw = url.searchParams.get('filing') ?? 'single';
+            const filingStatus: FilingStatus =
+              filingRaw === 'marriedJoint' || filingRaw === 'marriedSeparate' ? filingRaw : 'single';
+            const inputs = {
+              ...DEFAULT_TAX_INPUTS,
+              employmentIncome: num('salary', num('employmentIncome', DEFAULT_TAX_INPUTS.employmentIncome)),
+              bonus: num('bonus', 0),
+              taxableBenefits: num('benefits', 0),
+              stockGains: num('stockGains', 0),
+              otherIncome: num('otherIncome', 0),
+              rentalIncome: num('rentalIncome', 0),
+              age: Math.min(99, Math.max(18, Math.round(num('age', DEFAULT_TAX_INPUTS.age)))),
+              partnerAge: Math.min(99, Math.max(18, Math.round(num('partnerAge', DEFAULT_TAX_INPUTS.partnerAge)))),
+              pensionContribution: num('pension', 0),
+              partnerPensionContribution: num('partnerPension', 0),
+              filingStatus,
+              partnerEmploymentIncome: num('partnerSalary', 0),
+              partnerPaye: url.searchParams.get('partnerPaye') !== 'false',
+              selfEmployed: url.searchParams.get('selfEmployed') === 'true',
+            };
+            return Response.json(
+              { year: 2026, inputs, result: calculateIrishTax2026(inputs) },
+              { headers: JSON_HEADERS },
+            );
           }
 
           return errorJson(`Unknown API endpoint: ${pathname}`, 404);
