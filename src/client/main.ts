@@ -794,12 +794,12 @@ interface ApiInfoResponse {
 
 function mountMyIp(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   controlsEl.innerHTML = `
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <p class="font-fira text-xs text-[#858585]">Automatic dual-stack IPv4 &amp; IPv6 telemetry, ISP/ASN lookup, and HTTP request header inspection.</p>
       <button
         id="myip-refresh-btn"
         type="button"
-        class="group hero-cta-sm hero-cta-primary relative inline-flex h-10 items-center justify-center px-5 text-xs font-black uppercase leading-none text-black transition-all duration-200 hover:scale-[1.03] overflow-hidden cursor-pointer shrink-0"
+        class="group hero-cta-sm hero-cta-primary relative inline-flex h-10 items-center justify-center px-5 text-xs font-black uppercase leading-none text-black transition-all duration-200 hover:scale-[1.03] overflow-hidden cursor-pointer shrink-0 self-center sm:self-auto"
       >
         <span class="relative z-10 flex items-center justify-center gap-2 tracking-[0.16em]">REFRESH</span>
         <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform"></div>
@@ -1135,7 +1135,7 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <option value="10">10 probes</option>
         </select>
       </div>
-      <div class="md:col-span-3 flex items-center justify-end gap-2">
+      <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
         ${ctaButton('PING HOST')}
         ${stopButton()}
       </div>
@@ -1319,7 +1319,7 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <option value="24">24 hops</option>
         </select>
       </div>
-      <div class="md:col-span-3 flex items-center justify-end gap-2">
+      <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
         ${ctaButton('TRACE ROUTE')}
         ${stopButton()}
       </div>
@@ -1525,7 +1525,7 @@ function mountDns(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <option value="PTR">PTR</option>
         </select>
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('LOOKUP DNS')}
       </div>
     </form>
@@ -1608,7 +1608,7 @@ function mountWhois(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Domain Name or IP Address</label>
         <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. cloudflare.com or 1.1.1.1" value="cloudflare.com" required />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('WHOIS QUERY')}
       </div>
     </form>
@@ -1680,7 +1680,7 @@ function mountPort(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">TCP Port(s) (comma-separated, max 16)</label>
           <input id="port-list" type="text" class="cyber-input" placeholder="80, 443, 22" value="80, 443, 22, 53" required />
         </div>
-        <div class="md:col-span-3 flex justify-end">
+        <div class="md:col-span-3 flex justify-center md:justify-end">
           ${ctaButton('CHECK PORTS')}
         </div>
       </div>
@@ -1768,7 +1768,7 @@ function mountReverse(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IPv4 or IPv6 Address</label>
         <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or 8.8.8.8" value="${escapeHtml(visitorIp || '1.1.1.1')}" required />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('REVERSE DNS')}
       </div>
     </form>
@@ -1835,7 +1835,7 @@ function mountProxy(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IP Address (leave blank to inspect your connection)</label>
         <input id="tool-primary-input" type="text" class="cyber-input" placeholder="Leave blank for your IP, or enter an IPv4/IPv6" value="${escapeHtml(visitorIp)}" />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('CHECK PROXY')}
       </div>
     </form>
@@ -1911,7 +1911,7 @@ function mountGeo(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IP Address or Domain</label>
         <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or github.com (blank = your IP)" value="${escapeHtml(visitorIp || '1.1.1.1')}" />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('LOCATE IP')}
       </div>
     </form>
@@ -1996,7 +1996,7 @@ function mountBandwidth(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         </button>
       </div>
 
-      <div class="flex items-center gap-2.5">
+      <div class="flex items-center justify-center sm:justify-end gap-2.5 w-full sm:w-auto">
         <span id="sp-timer" class="font-fira text-xs text-[#858585]">00:00 / 00:20</span>
         <button
           id="sp-start-btn"
@@ -2350,7 +2350,7 @@ function mountSubnet(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Optional Mask / Prefix</label>
         <input id="subnet-mask" type="text" class="cyber-input" placeholder="e.g. 255.255.255.0 or 64" />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('CALCULATE')}
       </div>
     </form>
@@ -2533,7 +2533,7 @@ function mountRbl(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <option value="issues">Blocked / Errors</option>
         </select>
       </div>
-      <div class="md:col-span-3 flex items-center justify-end gap-2">
+      <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
         ${ctaButton('CHECK RBL')}
         ${stopButton()}
       </div>
@@ -2898,7 +2898,7 @@ function mountPropagation(controlsEl: HTMLElement, outputEl: HTMLElement): void 
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Expected Value (Optional)</label>
         <input id="prop-expected" type="text" class="cyber-input" placeholder="Auto-consensus if empty" />
       </div>
-      <div class="md:col-span-3 flex items-center justify-end gap-2">
+      <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
         ${ctaButton('CHECK PROPAGATION')}
         ${stopButton()}
       </div>
@@ -3578,7 +3578,7 @@ function mountEpoch(controlsEl: HTMLElement, outputEl: HTMLElement): void {
               </select>
             </div>
           </div>
-          <div class="flex justify-end">
+          <div class="flex justify-center sm:justify-end">
             ${ctaButton('CONVERT TIMESTAMP')}
           </div>
         </form>
@@ -3600,7 +3600,7 @@ function mountEpoch(controlsEl: HTMLElement, outputEl: HTMLElement): void {
                 <option value="local">Local Timezone</option>
               </select>
             </div>
-            <div class="sm:col-span-7 flex justify-end">
+            <div class="sm:col-span-7 flex justify-center sm:justify-end">
               <button type="submit" class="hero-cta-sm hero-cta-primary cursor-pointer px-4 py-2 rounded-lg font-fira text-xs font-bold tracking-[0.14em] uppercase">HUMAN → EPOCH</button>
             </div>
           </div>
@@ -3746,7 +3746,7 @@ function mountJsonSort(controlsEl: HTMLElement, outputEl: HTMLElement): void {
             <span>Case-insensitive</span>
           </label>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
           <select id="js-indent" class="cyber-select">
             <option value="2" selected>2 spaces</option>
             <option value="4">4 spaces</option>
@@ -3897,7 +3897,7 @@ function mountXmlToJson(controlsEl: HTMLElement, outputEl: HTMLElement): void {
             <span>Parse Numbers / Booleans</span>
           </label>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
           <select id="xml-indent" class="cyber-select">
             <option value="2" selected>2 spaces</option>
             <option value="4">4 spaces</option>
@@ -4727,7 +4727,7 @@ function mountIpv4ToIpv6(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IPv4 Address or Embedded IPv6 (e.g. 192.0.2.1, ::ffff:8.8.8.8, 2002:c000:201::)</label>
         <input id="tool-primary-input" type="text" class="cyber-input" value="192.0.2.1" placeholder="e.g. 192.0.2.1 or ::ffff:192.0.2.1" required />
       </div>
-      <div class="md:col-span-3 flex justify-end">
+      <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('CONVERT IP')}
       </div>
     </form>
@@ -4844,7 +4844,7 @@ function mountSpf(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Sending Server IP (Optional for Basic audit)</label>
           <input id="spf-ip" type="text" class="cyber-input" placeholder="e.g. 209.85.220.41" />
         </div>
-        <div class="md:col-span-3 flex justify-end">
+        <div class="md:col-span-3 flex justify-center md:justify-end">
           ${ctaButton('TEST SPF POLICY')}
         </div>
       </div>
@@ -5506,7 +5506,7 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           <span class="px-2 py-0.5 rounded bg-[#00ffff]/12 border border-[#00ffff]/35 font-fira text-[10px] font-bold uppercase tracking-widest text-[#00ffff] shrink-0">ENDPOINT</span>
           <code id="hook-full-url" class="font-fira text-xs text-white truncate select-all">${escapeHtml(getHookUrl())}</code>
         </div>
-        <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <div class="flex flex-wrap items-center justify-center sm:justify-end gap-2 shrink-0">
           <button
             id="hook-copy-url-btn"
             type="button"
@@ -6583,7 +6583,6 @@ function selectTool(id: ToolId, updateHash = false): void {
   updatePickerTrigger(tool);
   renderToolOptions();
 
-  document.getElementById('workspace-icon')!.innerHTML = renderIconSvg(tool.icon, 18);
   document.getElementById('workspace-title')!.textContent = tool.name;
   document.getElementById('workspace-desc')!.textContent = tool.desc;
   updateCliSnippet(tool);
