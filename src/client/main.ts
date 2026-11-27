@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CalendarDays,
   Check,
+  ChevronDown,
   Clock,
   CodeXml,
   Copy,
@@ -26,11 +27,14 @@ import {
   Regex,
   Route,
   Search,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Square,
   Timer,
+  Trash2,
   Type,
+  Webhook,
   createElement,
 } from 'lucide';
 import type { GeoInfo } from '../server/geo.ts';
@@ -44,6 +48,7 @@ import type {
 } from '../server/tools/ping.ts';
 import type { PortCheckResult, ProxyCheckResult } from '../server/tools/port.ts';
 import type { SpfTestResult, SpfVerdict } from '../server/tools/spf.ts';
+import type { WebhookChannelConfig, WebhookEvent } from '../server/tools/webhook.ts';
 import type { WhoisResult } from '../server/tools/whois.ts';
 import {
   buildAsciiArt,
@@ -143,14 +148,34 @@ type ToolId =
   | 'regex'
   | 'ascii'
   | 'ipv4to6'
-  | 'units';
+  | 'units'
+  | 'hook';
+
+type ToolCategoryId = 'network' | 'dns-security' | 'calculators' | 'datetime' | 'dev';
+
+interface ToolCategoryMeta {
+  id: ToolCategoryId;
+  label: string;
+  shortLabel: string;
+  icon: typeof Activity;
+}
+
+const TOOL_CATEGORIES: ToolCategoryMeta[] = [
+  { id: 'network', label: 'Network & IP', shortLabel: 'Network', icon: Network },
+  { id: 'dns-security', label: 'DNS & Security', shortLabel: 'DNS & Sec', icon: ShieldCheck },
+  { id: 'calculators', label: 'Calculators', shortLabel: 'Calc', icon: Calculator },
+  { id: 'datetime', label: 'Date & Time', shortLabel: 'Time', icon: CalendarClock },
+  { id: 'dev', label: 'Dev & Text', shortLabel: 'Dev', icon: CodeXml },
+];
 
 interface ToolMeta {
   id: ToolId;
+  category: ToolCategoryId;
   name: string;
   shortName: string;
   desc: string;
   icon: typeof Activity;
+  keywords?: string[];
   presets: Array<{ label: string; value: string }>;
   cliTemplate: (origin: string, visitorIp: string) => string;
 }
@@ -158,19 +183,23 @@ interface ToolMeta {
 const TOOLS: ToolMeta[] = [
   {
     id: 'myip',
+    category: 'network',
     name: 'What Is My IP',
     shortName: 'What Is My IP',
     desc: 'Inspect your dual-stack IPv4 & IPv6 addresses, ISP, ASN, geolocation, and request headers.',
     icon: Fingerprint,
+    keywords: ['ip', 'ipv4', 'ipv6', 'isp', 'asn', 'headers', 'whoami'],
     presets: [],
     cliTemplate: (origin) => `curl -s "${origin}/api/info"`,
   },
   {
     id: 'ping',
+    category: 'network',
     name: 'Online Ping',
     shortName: 'Ping',
     desc: 'Test host reachability and measure round-trip latency, jitter, and packet loss.',
     icon: Activity,
+    keywords: ['icmp', 'latency', 'rtt', 'jitter', 'packet loss'],
     presets: [
       { label: 'cloudflare.com', value: 'cloudflare.com' },
       { label: 'google.com', value: 'google.com' },
@@ -181,10 +210,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'traceroute',
+    category: 'network',
     name: 'Traceroute',
     shortName: 'Traceroute',
     desc: 'Trace the network path and hop-by-hop latency to a destination host or IP.',
     icon: Route,
+    keywords: ['hops', 'route', 'path', 'mtr', 'network'],
     presets: [
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
@@ -194,10 +225,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'dns',
+    category: 'dns-security',
     name: 'DNS Lookup',
     shortName: 'DNS Lookup',
     desc: 'Query A, AAAA, MX, NS, TXT, CNAME, SOA, CAA, SRV, and PTR records with TTLs.',
     icon: Search,
+    keywords: ['dig', 'nslookup', 'mx', 'txt', 'cname', 'aaaa', 'records'],
     presets: [
       { label: 'justanother.engineer', value: 'justanother.engineer' },
       { label: 'cloudflare.com', value: 'cloudflare.com' },
@@ -207,10 +240,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'propagation',
+    category: 'dns-security',
     name: 'DNS Propagation',
     shortName: 'DNS Propagation',
     desc: 'Check global DNS propagation across 6 Prisma Compute regions and 9 worldwide resolvers.',
     icon: Radar,
+    keywords: ['dns', 'global', 'resolvers', 'regions', 'ttl'],
     presets: [
       { label: 'www.google.com', value: 'www.google.com' },
       { label: 'justanother.engineer', value: 'justanother.engineer' },
@@ -220,10 +255,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'whois',
+    category: 'dns-security',
     name: 'WHOIS Lookup',
     shortName: 'WHOIS',
     desc: 'Retrieve domain registrar, expiration dates, name servers, or IP allocation data.',
     icon: FileSearch,
+    keywords: ['domain', 'registrar', 'rdap', 'owner', 'expiry'],
     presets: [
       { label: 'justanother.engineer', value: 'justanother.engineer' },
       { label: 'cloudflare.com', value: 'cloudflare.com' },
@@ -233,10 +270,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'port',
+    category: 'network',
     name: 'Port Check',
     shortName: 'Port Check',
     desc: 'Check if specific TCP ports are open, closed, or filtered on a remote host.',
     icon: Radar,
+    keywords: ['tcp', 'open', 'firewall', 'socket', 'scan'],
     presets: [
       { label: 'cloudflare.com', value: 'cloudflare.com' },
       { label: 'github.com', value: 'github.com' },
@@ -246,10 +285,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'reverse',
+    category: 'dns-security',
     name: 'Reverse Lookup',
     shortName: 'Reverse DNS',
     desc: 'Resolve an IPv4 or IPv6 address to its PTR hostname and verify FCrDNS.',
     icon: RefreshCw,
+    keywords: ['ptr', 'rdns', 'fcrdns', 'hostname'],
     presets: [
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
@@ -259,10 +300,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'proxy',
+    category: 'dns-security',
     name: 'Proxy Checker',
     shortName: 'Proxy Check',
     desc: 'Inspect proxy headers, open proxy ports (80/1080/3128/8080/8888), and ASN hints.',
     icon: ShieldAlert,
+    keywords: ['vpn', 'tor', 'socks', 'anonymizer', 'headers'],
     presets: [
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
@@ -271,10 +314,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'rbl',
+    category: 'dns-security',
     name: 'RBL Blacklist Check',
     shortName: 'RBL Check',
     desc: 'Check any public IP or domain across 25+ live DNSBL and domain blocklist zones.',
     icon: ShieldCheck,
+    keywords: ['dnsbl', 'spam', 'blacklist', 'blocklist', 'reputation', 'email'],
     presets: [
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
@@ -284,10 +329,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'spf',
+    category: 'dns-security',
     name: 'SPF Policy Tester',
     shortName: 'SPF Tester',
     desc: 'Evaluate RFC 7208 SPF policies in Basic or Advanced mode (sender IP, MAIL FROM, HELO, macros, 10-lookup & custom record).',
     icon: MailCheck,
+    keywords: ['email', 'smtp', 'dmarc', 'txt', 'rfc7208', 'mail'],
     presets: [
       { label: 'gmail.com', value: 'gmail.com' },
       { label: 'cloudflare.com', value: 'cloudflare.com' },
@@ -298,10 +345,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'geo',
+    category: 'network',
     name: 'Country by IP',
     shortName: 'Country / IP',
     desc: 'Identify country, city, timezone, ISP, ASN, and coordinates for any IP or domain.',
     icon: Globe,
+    keywords: ['geolocation', 'geoip', 'location', 'map', 'asn', 'isp'],
     presets: [
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
@@ -311,19 +360,23 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'bandwidth',
+    category: 'network',
     name: 'Multi-Region Speed Test',
     shortName: 'Speed Test',
     desc: 'Benchmark download, upload, latency, jitter, and packet loss across Prisma Compute regions.',
     icon: Gauge,
+    keywords: ['bandwidth', 'throughput', 'download', 'upload', 'mbps'],
     presets: [],
     cliTemplate: (origin) => `curl -o /dev/null -s -w "%{speed_download} B/s\\n" "${origin}/api/download?bytes=8388608"`,
   },
   {
     id: 'subnet',
+    category: 'calculators',
     name: 'Network Calculator',
     shortName: 'Subnet Calc',
     desc: 'Calculate IPv4/IPv6 CIDR ranges, subnet masks, wildcards, binary octets, and splits.',
     icon: Calculator,
+    keywords: ['cidr', 'mask', 'netmask', 'ipv4', 'ipv6', 'vlsm'],
     presets: [
       { label: '192.168.1.10/24', value: '192.168.1.10/24' },
       { label: '10.0.42.5/16', value: '10.0.42.5/16' },
@@ -334,10 +387,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'sla',
+    category: 'calculators',
     name: 'SLA Calculator',
     shortName: 'SLA Calc',
     desc: 'Convert uptime nines into downtime budgets, compare two SLAs, or reverse-check outage percentages.',
     icon: Clock,
+    keywords: ['uptime', 'downtime', 'nines', 'slo', 'availability', 'sre'],
     presets: [
       { label: '99% (Two Nines)', value: '99' },
       { label: '99.9% (Three Nines)', value: '99.9' },
@@ -349,10 +404,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'epoch',
+    category: 'datetime',
     name: 'Epoch Converter',
     shortName: 'Epoch Conv',
     desc: 'Convert Unix timestamps (s/ms/µs/ns) to GMT & local dates, parse human dates, and break down seconds.',
     icon: CalendarClock,
+    keywords: ['unix', 'timestamp', 'utc', 'gmt', 'iso8601', 'time'],
     presets: [
       { label: '0 (Unix Epoch)', value: '0' },
       { label: '1700000000', value: '1700000000' },
@@ -362,10 +419,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'days',
+    category: 'datetime',
     name: 'Days & Workdays Calculator',
     shortName: 'Days / Dates',
     desc: 'Find dates N days/hours ahead or ago, count days between dates, skip weekends & country holidays, and estimate effort hours.',
     icon: CalendarDays,
+    keywords: ['workdays', 'business days', 'holidays', 'calendar', 'duration'],
     presets: [
       { label: '15 days', value: '15' },
       { label: '30 days', value: '30' },
@@ -376,46 +435,56 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'jsonsort',
+    category: 'dev',
     name: 'JSON Sort',
     shortName: 'JSON Sort',
     desc: 'Recursively sort JSON object keys alphabetically, optionally sort arrays, and format or minify output.',
     icon: ArrowDownAZ,
+    keywords: ['json', 'format', 'pretty', 'minify', 'jq', 'sort'],
     presets: [],
     cliTemplate: (origin) => `curl -s "${origin}/api/me" | jq -S .`,
   },
   {
     id: 'xml2json',
+    category: 'dev',
     name: 'XML to JSON',
     shortName: 'XML → JSON',
     desc: 'Convert XML documents with attributes, CDATA, and repeated elements into clean JSON.',
     icon: CodeXml,
+    keywords: ['xml', 'json', 'convert', 'parse', 'transform'],
     presets: [],
     cliTemplate: () => `printf '<service port="3000"><name>jae-tools</name></service>'`,
   },
   {
     id: 'base64',
+    category: 'dev',
     name: 'Base64 Encode / Decode',
     shortName: 'Base64',
     desc: 'UTF-8 safe Base64 and URL-safe Base64 encoding & decoding with byte length metrics.',
     icon: Binary,
+    keywords: ['encode', 'decode', 'b64', 'utf8', 'binary'],
     presets: [],
     cliTemplate: () => `printf 'justanother.engineer' | base64`,
   },
   {
     id: 'url',
+    category: 'dev',
     name: 'URL Encode / Decode',
     shortName: 'URL Encode',
     desc: 'Percent-encode or decode URLs and query components, plus inspect query string parameters.',
     icon: Link2,
+    keywords: ['percent', 'uri', 'querystring', 'encode', 'decode'],
     presets: [],
     cliTemplate: () => `python3 -c "import urllib.parse; print(urllib.parse.quote('hello world & tools'))"`,
   },
   {
     id: 'cron',
+    category: 'datetime',
     name: 'Crontab Converter',
     shortName: 'Crontab',
     desc: 'Translate 5-field crontab schedules & macros into plain English and preview upcoming run times.',
     icon: Timer,
+    keywords: ['cron', 'schedule', 'job', 'timer', 'interval'],
     presets: [
       { label: '*/5 * * * *', value: '*/5 * * * *' },
       { label: '0 9 * * 1-5', value: '0 9 * * 1-5' },
@@ -426,19 +495,23 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'regex',
+    category: 'dev',
     name: 'Regex Tester & Explainer',
     shortName: 'Regex Tester',
     desc: 'Test JavaScript regular expressions with live highlighting, capture groups, substitution, and token breakdown.',
     icon: Regex,
+    keywords: ['regexp', 'pattern', 'match', 'replace', 'grep'],
     presets: [],
     cliTemplate: () => `rg -n --pcre2 '(?<proto>https?)://(?<host>[^/\\s:]+)' sample.txt`,
   },
   {
     id: 'ascii',
+    category: 'dev',
     name: 'ASCII Art Builder',
     shortName: 'ASCII Art',
     desc: 'Generate block, shadow, dot-matrix, banner, and Braille ASCII banners with frames and comment wrappers.',
     icon: Type,
+    keywords: ['figlet', 'banner', 'text', 'braille', 'font'],
     presets: [
       { label: 'LUI.Z', value: 'LUI.Z' },
       { label: 'JAE-LABS', value: 'JAE-LABS' },
@@ -449,10 +522,12 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'ipv4to6',
+    category: 'calculators',
     name: 'IPv4 to IPv6 Converter',
     shortName: 'IPv4 → IPv6',
     desc: 'Convert IPv4 to ::ffff: IPv4-mapped, 6to4 (2002::/16), NAT64 (64:ff9b::/96), ISATAP, & reverse IPv6 back to IPv4.',
     icon: EthernetPort,
+    keywords: ['ipv4', 'ipv6', 'nat64', '6to4', 'isatap', 'mapped'],
     presets: [
       { label: '192.0.2.1', value: '192.0.2.1' },
       { label: '1.1.1.1', value: '1.1.1.1' },
@@ -463,19 +538,35 @@ const TOOLS: ToolMeta[] = [
   },
   {
     id: 'units',
+    category: 'calculators',
     name: 'Unit Converter',
     shortName: 'Unit Conv',
     desc: 'Convert data storage (SI & IEC), network bandwidth rates, and estimate transfer ETA.',
     icon: ArrowLeftRight,
+    keywords: ['bytes', 'mbps', 'gbps', 'tb', 'gib', 'transfer', 'eta'],
     presets: [],
     cliTemplate: (origin) => `curl -s "${origin}/api/me"`,
+  },
+  {
+    id: 'hook',
+    category: 'dev',
+    name: 'Payload Inspector',
+    shortName: 'Payload Catch',
+    desc: 'Capture and inspect live HTTP requests, JSON payloads, headers, and query strings sent to /hook/<path>.',
+    icon: Webhook,
+    keywords: ['webhook', 'payload', 'http', 'requestbin', 'catch', 'inspect', 'post', 'live'],
+    presets: [],
+    cliTemplate: (origin) =>
+      `curl -s -X POST "${origin}/hook/demo" -H "Content-Type: application/json" -d '{"hello":"world"}'`,
   },
 ];
 
 let activeTool: ToolId = 'myip';
+let pickerOpen = false;
 let visitorIp = '';
 let activeAbort: AbortController | null = null;
 let activeSpeedCleanup: (() => void) | null = null;
+let activeToolCleanup: (() => void) | null = null;
 
 function escapeHtml(str: string): string {
   return str
@@ -5264,32 +5355,618 @@ function mountUnits(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   renderEta();
 }
 
+function generateRandomChannel(): string {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (const b of bytes) {
+    out += alphabet[b % alphabet.length];
+  }
+  return out;
+}
+
+function sanitizeChannelInput(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+/, '')
+    .slice(0, 48);
+}
+
+function methodBadgeClass(method: string): string {
+  switch (method.toUpperCase()) {
+    case 'POST':
+      return 'border-[#f3eb2c]/45 bg-[#f3eb2c]/12 text-[#f3eb2c]';
+    case 'GET':
+      return 'border-[#00ffff]/45 bg-[#00ffff]/12 text-[#00ffff]';
+    case 'PUT':
+    case 'PATCH':
+      return 'border-amber-400/45 bg-amber-400/12 text-amber-300';
+    case 'DELETE':
+      return 'border-rose-500/45 bg-rose-500/12 text-rose-400';
+    default:
+      return 'border-white/20 bg-white/5 text-[#ccc]';
+  }
+}
+
+function buildReplayCurl(origin: string, ev: WebhookEvent): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(ev.query)) {
+    if (Array.isArray(v)) {
+      v.forEach((item) => qs.append(k, item));
+    } else {
+      qs.append(k, v);
+    }
+  }
+  const fullUrl = `${origin}${ev.path}${qs.toString() ? `?${qs.toString()}` : ''}`;
+  const parts = [`curl -X ${ev.method} "${fullUrl}"`];
+  if (ev.contentType) {
+    parts.push(`-H "Content-Type: ${ev.contentType.replaceAll('"', '\\"')}"`);
+  }
+  if (ev.bodyText.length > 0) {
+    parts.push(`-d '${ev.bodyText.replaceAll("'", "'\\''")}'`);
+  }
+  return parts.join(' \\\n  ');
+}
+
+function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  const STORAGE_KEY = 'jae-tools-hook-channel';
+  let channel = '';
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY) ?? '';
+    const cleaned = sanitizeChannelInput(saved);
+    channel = cleaned.length >= 2 ? cleaned : generateRandomChannel();
+  } catch {
+    channel = generateRandomChannel();
+  }
+
+  let events: WebhookEvent[] = [];
+  let selectedEventId: string | null = null;
+  let currentConfig: WebhookChannelConfig = {
+    status: 200,
+    contentType: 'application/json; charset=utf-8',
+    body: '',
+  };
+  let eventSource: EventSource | null = null;
+  let disposed = false;
+
+  const saveChannel = (next: string) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Ignore storage errors
+    }
+  };
+  saveChannel(channel);
+
+  const getHookUrl = () => `${window.location.origin}/hook/${channel}`;
+
+  controlsEl.innerHTML = `
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-col lg:flex-row lg:items-center gap-2.5">
+        <form id="hook-channel-form" class="flex flex-1 items-center gap-2 min-w-0">
+          <div class="flex flex-1 items-center rounded-lg border border-white/15 bg-[#050505] overflow-hidden focus-within:border-[#00ffff]/70 min-w-0">
+            <span class="px-3 py-2.5 font-fira text-xs text-[#777] bg-white/5 border-r border-white/10 shrink-0 select-none">/hook/</span>
+            <input
+              id="tool-primary-input"
+              type="text"
+              value="${escapeHtml(channel)}"
+              placeholder="my-webhook-path"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="48"
+              aria-label="Webhook path slug"
+              class="w-full min-w-0 bg-transparent px-3 py-2.5 font-fira text-xs sm:text-sm text-white placeholder-[#666] outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            class="rounded-lg border border-white/15 bg-[#050505] px-3.5 py-2.5 font-fira text-xs font-semibold uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer shrink-0"
+          >
+            LISTEN
+          </button>
+        </form>
+
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <span
+            id="hook-live-badge"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-amber-300"
+          >
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>CONNECTING</span>
+          </span>
+
+          <select
+            id="hook-status-select"
+            aria-label="Response HTTP status"
+            class="cyber-select !py-2 !text-xs"
+            title="HTTP status returned to callers"
+          >
+            <option value="200">Reply 200 OK</option>
+            <option value="201">Reply 201 Created</option>
+            <option value="202">Reply 202 Accepted</option>
+            <option value="204">Reply 204 No Content</option>
+            <option value="400">Reply 400 Bad Request</option>
+            <option value="404">Reply 404 Not Found</option>
+            <option value="500">Reply 500 Error</option>
+          </select>
+
+          <button
+            id="hook-new-btn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#050505] px-3 py-2 font-fira text-[11px] uppercase tracking-wider text-[#ccc] hover:border-white/35 hover:text-white transition-colors cursor-pointer"
+          >
+            ${renderIconSvg(RefreshCw, 13)} NEW PATH
+          </button>
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-[#00ffff]/25 bg-[#050505] px-3.5 py-2.5">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="px-2 py-0.5 rounded bg-[#00ffff]/12 border border-[#00ffff]/35 font-fira text-[10px] font-bold uppercase tracking-widest text-[#00ffff] shrink-0">ENDPOINT</span>
+          <code id="hook-full-url" class="font-fira text-xs text-white truncate select-all">${escapeHtml(getHookUrl())}</code>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            id="hook-copy-url-btn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black px-3 py-1.5 font-fira text-[11px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 transition-colors cursor-pointer"
+          >
+            COPY URL
+          </button>
+          <button
+            id="hook-send-test-btn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-[#00ffff]/40 bg-[#00ffff]/10 px-3 py-1.5 font-fira text-[11px] font-semibold uppercase tracking-wider text-[#00ffff] hover:bg-[#00ffff]/20 transition-colors cursor-pointer"
+          >
+            ${renderIconSvg(Send, 12)} SEND TEST
+          </button>
+          <button
+            id="hook-clear-btn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/35 bg-rose-950/20 px-3 py-1.5 font-fira text-[11px] uppercase tracking-wider text-rose-300 hover:border-rose-400/70 transition-colors cursor-pointer"
+          >
+            ${renderIconSvg(Trash2, 12)} CLEAR
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const channelInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
+  const channelForm = controlsEl.querySelector<HTMLFormElement>('#hook-channel-form')!;
+  const liveBadge = controlsEl.querySelector<HTMLElement>('#hook-live-badge')!;
+  const statusSelect = controlsEl.querySelector<HTMLSelectElement>('#hook-status-select')!;
+  const fullUrlEl = controlsEl.querySelector<HTMLElement>('#hook-full-url')!;
+  const copyUrlBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-copy-url-btn')!;
+  const sendTestBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-send-test-btn')!;
+  const newBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-new-btn')!;
+  const clearBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-clear-btn')!;
+
+  const updateUrlDisplay = () => {
+    const url = getHookUrl();
+    fullUrlEl.textContent = url;
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      snippetEl.textContent = `curl -s -X POST "${url}" -H "Content-Type: application/json" -d '{"event":"ping","ok":true}'`;
+    }
+  };
+
+  const setLiveStatus = (state: 'live' | 'connecting' | 'error') => {
+    if (state === 'live') {
+      liveBadge.className =
+        'inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-emerald-300';
+      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>LIVE</span>`;
+    } else if (state === 'connecting') {
+      liveBadge.className =
+        'inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-amber-300';
+      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>CONNECTING</span>`;
+    } else {
+      liveBadge.className =
+        'inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-rose-300';
+      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>RECONNECTING</span>`;
+    }
+  };
+
+  const renderEventsUi = () => {
+    if (events.length === 0) {
+      const sampleCurl = `curl -X POST "${getHookUrl()}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"service":"payments","event":"invoice.paid","amount":4200}'`;
+      outputEl.innerHTML = `
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-6 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-[#00ffff] animate-ping shrink-0"></span>
+            <div>
+              <p class="font-fira text-xs font-bold uppercase tracking-[0.18em] text-white">Waiting for incoming requests on /hook/${escapeHtml(channel)}</p>
+              <p class="text-xs text-[#858585] mt-1">Send any GET, POST, PUT, PATCH, or DELETE request (including subpaths like <code class="font-fira text-[#00ffff]">/hook/${escapeHtml(channel)}/events</code>). Payloads appear here live in real time.</p>
+            </div>
+          </div>
+          ${rawOutputBlock('QUICK TEST WITH CURL', sampleCurl)}
+          <p class="font-fira text-[11px] text-[#666]">In-memory capture buffer holds the 50 most recent requests per path (up to 256 KiB per body).</p>
+        </div>
+      `;
+      bindCopyButtons(outputEl);
+      return;
+    }
+
+    const activeEvent = events.find((e) => e.id === selectedEventId) ?? events[0];
+    selectedEventId = activeEvent.id;
+
+    const formattedBody =
+      activeEvent.bodyJson !== null
+        ? JSON.stringify(activeEvent.bodyJson, null, 2)
+        : activeEvent.bodyText;
+    const bodyLabel =
+      activeEvent.bodyJson !== null
+        ? 'PAYLOAD BODY (JSON)'
+        : activeEvent.bodyBytes > 0
+          ? 'PAYLOAD BODY (RAW)'
+          : 'PAYLOAD BODY (EMPTY)';
+
+    const queryEntries = Object.entries(activeEvent.query);
+    const headerEntries = Object.entries(activeEvent.headers).sort(([a], [b]) => a.localeCompare(b));
+    const replayCurl = buildReplayCurl(window.location.origin, activeEvent);
+
+    outputEl.innerHTML = `
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        <!-- Request Feed -->
+        <div class="lg:col-span-4 rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/60">
+            <span class="font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">INCOMING (${events.length} / 50)</span>
+            <span class="font-fira text-[10px] text-[#00ffff]">LIVE STREAM</span>
+          </div>
+          <div class="flex flex-col divide-y divide-white/8 max-h-[540px] overflow-y-auto">
+            ${events
+              .map((ev) => {
+                const isSel = ev.id === activeEvent.id;
+                const timeStr = new Date(ev.receivedAtMs).toLocaleTimeString([], {
+                  hour12: false,
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                });
+                return `
+                  <button
+                    type="button"
+                    data-event-id="${escapeHtml(ev.id)}"
+                    class="w-full px-3.5 py-2.5 text-left transition-colors cursor-pointer ${
+                      isSel ? 'bg-[#f3eb2c]/10 border-l-2 border-l-[#f3eb2c]' : 'hover:bg-white/5 border-l-2 border-l-transparent'
+                    }"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="px-1.5 py-0.5 rounded border font-fira text-[10px] font-bold uppercase ${methodBadgeClass(ev.method)}">${escapeHtml(ev.method)}</span>
+                      <span class="font-fira text-[10px] text-[#777]">${escapeHtml(timeStr)}</span>
+                    </div>
+                    <p class="mt-1.5 font-fira text-xs text-white truncate" title="${escapeHtml(ev.path)}">${escapeHtml(ev.subpath || '/')}</p>
+                    <div class="mt-1 flex items-center justify-between gap-2 font-fira text-[10px] text-[#777]">
+                      <span class="truncate">${escapeHtml(ev.sourceIp || 'unknown')}</span>
+                      <span class="shrink-0">${escapeHtml(formatBytes(ev.bodyBytes))}</span>
+                    </div>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+
+        <!-- Selected Request Inspector -->
+        <div class="lg:col-span-8 flex flex-col gap-4">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            ${statCard('METHOD', activeEvent.method, activeEvent.method === 'POST' ? 'yellow' : 'cyan')}
+            ${statCard('SOURCE IP', activeEvent.sourceIp || '—', 'white')}
+            ${statCard('PAYLOAD SIZE', `${formatBytes(activeEvent.bodyBytes)}${activeEvent.bodyTruncated ? ' (truncated)' : ''}`, activeEvent.bodyTruncated ? 'red' : 'green')}
+            ${statCard('CONTENT-TYPE', activeEvent.contentType || 'none', 'cyan')}
+          </div>
+
+          <div class="rounded-xl border border-white/10 bg-[#050505] px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <span class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">PATH &amp; TIMESTAMP</span>
+              <p class="font-fira text-xs text-white break-all mt-0.5">${escapeHtml(activeEvent.path)} <span class="text-[#666] ml-2">${escapeHtml(activeEvent.receivedAt)}</span></p>
+            </div>
+            <button
+              id="hook-copy-curl-btn"
+              type="button"
+              class="px-2.5 py-1 rounded border border-white/15 bg-black font-fira text-[10px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 cursor-pointer shrink-0"
+            >
+              COPY CURL
+            </button>
+          </div>
+
+          ${
+            activeEvent.bodyBytes > 0
+              ? rawOutputBlock(
+                  bodyLabel,
+                  formattedBody,
+                  activeEvent.bodyJson !== null ? activeEvent.bodyJson : undefined,
+                )
+              : `
+                <div class="rounded-xl border border-white/10 bg-[#050505] px-4 py-4 font-fira text-xs text-[#666]">
+                  No request body received for this ${escapeHtml(activeEvent.method)} request.
+                </div>
+              `
+          }
+
+          ${
+            queryEntries.length > 0
+              ? `
+                <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+                  <div class="px-4 py-2.5 border-b border-white/10 bg-black/60 font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">
+                    QUERY PARAMETERS (${queryEntries.length})
+                  </div>
+                  <div class="divide-y divide-white/8">
+                    ${queryEntries
+                      .map(
+                        ([k, v]) => `
+                          <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 px-4 py-2 font-fira text-xs">
+                            <span class="text-[#00ffff] break-all">${escapeHtml(k)}</span>
+                            <span class="sm:col-span-2 text-[#e0e0e0] break-all">${escapeHtml(Array.isArray(v) ? v.join(', ') : v)}</span>
+                          </div>
+                        `,
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+            <div class="px-4 py-2.5 border-b border-white/10 bg-black/60 font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">
+              HTTP HEADERS (${headerEntries.length})
+            </div>
+            <div class="divide-y divide-white/8 max-h-[300px] overflow-y-auto">
+              ${headerEntries
+                .map(
+                  ([k, v]) => `
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-1 px-4 py-2 font-fira text-xs">
+                      <span class="text-[#f3eb2c]/90 break-all">${escapeHtml(k)}</span>
+                      <span class="sm:col-span-2 text-[#d0d0d0] break-all">${escapeHtml(v)}</span>
+                    </div>
+                  `,
+                )
+                .join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    bindCopyButtons(outputEl, activeEvent.bodyJson !== null ? activeEvent.bodyJson : undefined);
+
+    outputEl.querySelectorAll<HTMLButtonElement>('[data-event-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.eventId;
+        if (id && id !== selectedEventId) {
+          selectedEventId = id;
+          renderEventsUi();
+        }
+      });
+    });
+
+    const copyCurlBtn = outputEl.querySelector<HTMLButtonElement>('#hook-copy-curl-btn');
+    copyCurlBtn?.addEventListener('click', () => {
+      void copyText(replayCurl, copyCurlBtn, 'COPY CURL');
+    });
+  };
+
+  const connectStream = () => {
+    eventSource?.close();
+    eventSource = null;
+    if (disposed) return;
+
+    setLiveStatus('connecting');
+    updateUrlDisplay();
+
+    const es = new EventSource(`/api/hook/${encodeURIComponent(channel)}/stream`);
+    eventSource = es;
+
+    es.addEventListener('open', () => {
+      if (!disposed) setLiveStatus('live');
+    });
+
+    es.addEventListener('init', (msg) => {
+      if (disposed) return;
+      try {
+        const data = JSON.parse((msg as MessageEvent<string>).data) as {
+          events: WebhookEvent[];
+          config: WebhookChannelConfig;
+        };
+        events = data.events ?? [];
+        if (data.config) {
+          currentConfig = data.config;
+          statusSelect.value = String(currentConfig.status);
+        }
+        selectedEventId = events[0]?.id ?? null;
+        setLiveStatus('live');
+        renderEventsUi();
+      } catch {
+        // Ignore malformed init event
+      }
+    });
+
+    es.addEventListener('request', (msg) => {
+      if (disposed) return;
+      try {
+        const ev = JSON.parse((msg as MessageEvent<string>).data) as WebhookEvent;
+        const wasAtLatest = events.length === 0 || selectedEventId === events[0]?.id;
+        events = [ev, ...events.filter((e) => e.id !== ev.id)].slice(0, 50);
+        if (wasAtLatest) {
+          selectedEventId = ev.id;
+        }
+        renderEventsUi();
+      } catch {
+        // Ignore malformed request event
+      }
+    });
+
+    es.addEventListener('cleared', () => {
+      if (disposed) return;
+      events = [];
+      selectedEventId = null;
+      renderEventsUi();
+    });
+
+    es.onerror = () => {
+      if (!disposed) setLiveStatus('error');
+    };
+  };
+
+  channelForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cleaned = sanitizeChannelInput(channelInput.value);
+    if (cleaned.length < 2) {
+      channelInput.value = channel;
+      return;
+    }
+    channel = cleaned;
+    channelInput.value = channel;
+    saveChannel(channel);
+    events = [];
+    selectedEventId = null;
+    connectStream();
+  });
+
+  newBtn.addEventListener('click', () => {
+    channel = generateRandomChannel();
+    channelInput.value = channel;
+    saveChannel(channel);
+    events = [];
+    selectedEventId = null;
+    connectStream();
+  });
+
+  copyUrlBtn.addEventListener('click', () => {
+    void copyText(getHookUrl(), copyUrlBtn, 'COPY URL');
+  });
+
+  sendTestBtn.addEventListener('click', async () => {
+    sendTestBtn.disabled = true;
+    try {
+      await fetch(`${getHookUrl()}/test-event?source=ui&ts=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Demo-Event': 'payload.check',
+        },
+        body: JSON.stringify({
+          event: 'payload.check',
+          channel,
+          sentAt: new Date().toISOString(),
+          sample: { ok: true, region: 'client-test', items: [1, 2, 3] },
+        }),
+      });
+    } finally {
+      sendTestBtn.disabled = false;
+    }
+  });
+
+  clearBtn.addEventListener('click', async () => {
+    await fetch(`/api/hook/${encodeURIComponent(channel)}/events`, { method: 'DELETE' });
+    events = [];
+    selectedEventId = null;
+    renderEventsUi();
+  });
+
+  statusSelect.addEventListener('change', async () => {
+    const nextStatus = Number(statusSelect.value);
+    await fetch(`/api/hook/${encodeURIComponent(channel)}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+  });
+
+  activeToolCleanup = () => {
+    disposed = true;
+    eventSource?.close();
+    eventSource = null;
+  };
+
+  renderEventsUi();
+  connectStream();
+}
+
 // --- NAVIGATION & BOOTSTRAP ---
 
-function renderTabs(): void {
-  const container = document.getElementById('tool-tabs')!;
-  container.innerHTML = TOOLS.map(
-    (t) => `
-      <button
-        type="button"
-        role="tab"
-        data-tool-id="${t.id}"
-        data-active="${t.id === activeTool ? 'true' : 'false'}"
-        aria-selected="${t.id === activeTool ? 'true' : 'false'}"
-        class="tool-tab"
-      >
-        <span class="tool-tab-icon text-[#00ffff] shrink-0">${renderIconSvg(t.icon, 16)}</span>
-        <span class="tool-tab-title font-fira text-xs font-semibold text-[#c8c8c8] truncate">${escapeHtml(t.shortName)}</span>
-      </button>
-    `,
-  ).join('');
+function setPickerOpen(open: boolean): void {
+  pickerOpen = open;
+  const picker = document.getElementById('tool-picker');
+  const panel = document.getElementById('tool-picker-panel');
+  const trigger = document.getElementById('tool-picker-trigger');
+  const chevron = document.getElementById('picker-trigger-chevron');
+  const hint = document.getElementById('picker-hint');
+  if (!picker || !panel || !trigger) return;
+
+  picker.dataset.open = open ? 'true' : 'false';
+  panel.classList.toggle('hidden', !open);
+  panel.classList.toggle('flex', open);
+  trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  chevron?.classList.toggle('rotate-180', open);
+  if (hint) {
+    hint.textContent = open ? 'Close' : 'Select';
+  }
+}
+
+function updatePickerTrigger(tool: ToolMeta): void {
+  const iconEl = document.getElementById('picker-active-icon');
+  const titleEl = document.getElementById('picker-active-tool');
+  if (iconEl) iconEl.innerHTML = renderIconSvg(tool.icon, 15);
+  if (titleEl) titleEl.textContent = tool.name;
+}
+
+function renderDropdownOption(t: ToolMeta): string {
+  const isActive = t.id === activeTool;
+  const activeCheck = isActive
+    ? `<span class="ml-auto text-[#f3eb2c] shrink-0">${renderIconSvg(Check, 14)}</span>`
+    : '';
+  return `
+    <button
+      type="button"
+      role="option"
+      data-tool-id="${t.id}"
+      data-active="${isActive ? 'true' : 'false'}"
+      aria-selected="${isActive ? 'true' : 'false'}"
+      class="cyber-dropdown-item"
+    >
+      <span class="cyber-dropdown-icon text-[#00ffff]/85 shrink-0">${renderIconSvg(t.icon, 15)}</span>
+      <span class="min-w-0 flex-1">
+        <span class="cyber-dropdown-title block font-fira text-xs font-semibold text-[#d0d0d0] truncate">${escapeHtml(t.name)}</span>
+      </span>
+      ${activeCheck}
+    </button>
+  `;
+}
+
+function renderToolOptions(): void {
+  const container = document.getElementById('tool-options')!;
+
+  container.innerHTML = TOOL_CATEGORIES.map((cat) => {
+    const catTools = TOOLS.filter((t) => t.category === cat.id);
+    return `
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2 px-0.5">
+          <span class="text-[#00ffff]/85">${renderIconSvg(cat.icon, 12)}</span>
+          <span class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#00ffff]/85">${escapeHtml(cat.label)}</span>
+          <span class="h-px flex-1 bg-white/8"></span>
+          <span class="font-fira text-[10px] text-[#666]">${catTools.length}</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+          ${catTools.map((t) => renderDropdownOption(t)).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
 
   container.querySelectorAll<HTMLButtonElement>('[data-tool-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.toolId as ToolId;
-      if (id && id !== activeTool) {
+      if (!id) return;
+      if (id !== activeTool) {
         selectTool(id, true);
       }
+      setPickerOpen(false);
     });
   });
 }
@@ -5304,6 +5981,8 @@ function selectTool(id: ToolId, updateHash = false): void {
   activeAbort = null;
   activeSpeedCleanup?.();
   activeSpeedCleanup = null;
+  activeToolCleanup?.();
+  activeToolCleanup = null;
   activeTool = id;
 
   if (updateHash) {
@@ -5311,7 +5990,8 @@ function selectTool(id: ToolId, updateHash = false): void {
   }
 
   const tool = TOOLS.find((t) => t.id === id) ?? TOOLS[0];
-  renderTabs();
+  updatePickerTrigger(tool);
+  renderToolOptions();
 
   document.getElementById('workspace-icon')!.innerHTML = renderIconSvg(tool.icon, 18);
   document.getElementById('workspace-title')!.textContent = tool.name;
@@ -5421,6 +6101,9 @@ function selectTool(id: ToolId, updateHash = false): void {
       break;
     case 'units':
       mountUnits(controlsEl, outputEl);
+      break;
+    case 'hook':
+      mountHook(controlsEl, outputEl);
       break;
   }
 }
@@ -5634,9 +6317,37 @@ function setupParentResizeSync(): void {
   setTimeout(postHeight, 600);
 }
 
+function setupNavigationControls(): void {
+  const picker = document.getElementById('tool-picker');
+  const trigger = document.getElementById('tool-picker-trigger');
+  const chevron = document.getElementById('picker-trigger-chevron');
+  if (chevron) {
+    chevron.innerHTML = renderIconSvg(ChevronDown, 14);
+  }
+
+  trigger?.addEventListener('click', () => {
+    setPickerOpen(!pickerOpen);
+  });
+
+  document.addEventListener('click', (e: MouseEvent) => {
+    if (!pickerOpen || !picker) return;
+    if (!picker.contains(e.target as Node)) {
+      setPickerOpen(false);
+    }
+  });
+
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && pickerOpen) {
+      setPickerOpen(false);
+      trigger?.focus();
+    }
+  });
+}
+
 function init(): void {
   setupParentResizeSync();
   setupEmbeddedSearch();
+  setupNavigationControls();
   const hashTool = window.location.hash.replace(/^#/, '') as ToolId;
   const initialTool: ToolId = TOOLS.some((t) => t.id === hashTool) ? hashTool : 'myip';
 

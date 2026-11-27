@@ -22,9 +22,43 @@
       <div class="max-w-6xl xl:max-w-[1240px] mx-auto relative z-10 flex flex-col gap-6">
         <h1 class="sr-only">lui.z Network Diagnostics &amp; Utility Suite</h1>
 
-        <!-- Tool Navigation Grid -->
-        <section aria-label="Network Tools Menu" class="rounded-xl border border-white/10 bg-black/55 backdrop-blur-sm p-3.5 sm:p-4">
-          <div id="tool-tabs" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2" role="tablist"></div>
+        <!-- Cyberpunk Tool Dropdown -->
+        <section id="tool-picker" aria-label="Tool Selector" class="relative flex flex-col items-start">
+          <button
+            id="tool-picker-trigger"
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            aria-controls="tool-picker-panel"
+            class="cyber-dropdown-trigger group w-full sm:w-auto sm:min-w-[290px] inline-flex items-center justify-between gap-4 rounded-lg border border-white/15 bg-[#050505]/95 px-3.5 py-2 text-left cursor-pointer outline-none transition-all duration-150 hover:border-[#00ffff]/55 hover:shadow-[0_0_16px_rgba(0,255,255,0.12)] focus-visible:border-[#f3eb2c]/75 focus-visible:shadow-[0_0_16px_rgba(243,235,44,0.16)]"
+          >
+            <span class="flex items-center gap-2.5 min-w-0">
+              <span id="picker-active-icon" class="text-[#f3eb2c] shrink-0 inline-flex"></span>
+              <span id="picker-active-tool" class="font-fira text-xs font-bold text-white truncate">What Is My IP</span>
+            </span>
+            <span class="flex items-center gap-2 shrink-0">
+              <span
+                id="picker-hint"
+                class="font-fira text-[10px] uppercase tracking-[0.14em] text-[#858585] group-hover:text-[#00ffff] transition-colors"
+              >Select</span>
+              <span id="picker-trigger-chevron" class="inline-flex text-[#00ffff] transition-transform duration-200"></span>
+            </span>
+          </button>
+
+          <!-- Custom Cyberpunk Dropdown Panel -->
+          <div
+            id="tool-picker-panel"
+            role="region"
+            aria-label="Tools List"
+            class="hidden w-full mt-2 flex-col rounded-xl border border-[#00ffff]/40 bg-[#040608]/95 backdrop-blur-md p-3.5 sm:p-4 shadow-[0_0_28px_rgba(0,255,255,0.12)]"
+          >
+            <div
+              id="tool-options"
+              role="listbox"
+              aria-label="Available Tools"
+              class="flex flex-col gap-4"
+            ></div>
+          </div>
         </section>
 
         <!-- Active Tool Workspace -->

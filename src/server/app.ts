@@ -20,6 +20,11 @@ import { performPortCheck, performProxyCheck } from './tools/port.ts';
 import { performLocalPropagationLookup, performPropagationCheck } from './tools/propagation.ts';
 import { performRblLookup } from './tools/rbl.ts';
 import { performSpfTest } from './tools/spf.ts';
+import {
+  WebhookStore,
+  isAllowedResponseStatus,
+  normalizeChannelId,
+} from './tools/webhook.ts';
 import { performWhoisLookup } from './tools/whois.ts';
 
 export interface StaticAssetResult {
@@ -32,6 +37,7 @@ export interface AppOptions {
   lookupGeo?: (ip: string) => Promise<GeoInfo | null>;
   serveStatic?: (pathname: string, method: string) => Promise<StaticAssetResult | null>;
   fetchImpl?: typeof fetch;
+  webhookStore?: WebhookStore;
 }
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
@@ -124,9 +130,17 @@ function createBandwidthStream(totalBytes: number): ReadableStream<Uint8Array> {
   });
 }
 
+const HOOK_CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Max-Age': '86400',
+};
+
 export function createApp(options: AppOptions = {}) {
   const fetchFn = options.fetchImpl ?? fetch;
   const lookupGeo = options.lookupGeo ?? createGeoLookup({ fetchImpl: fetchFn });
+  const webhookStore = options.webhookStore ?? new WebhookStore();
 
   return {
     async fetch(
@@ -136,6 +150,195 @@ export function createApp(options: AppOptions = {}) {
       const url = new URL(request.url);
       const pathname = url.pathname;
       const client = extractClientIp(request.headers, socketInfo);
+
+      // Live Webhook / Payload Catch endpoint: /hook/<channel>[/subpath...]
+      if (pathname.startsWith('/hook/')) {
+        const rest = pathname.slice('/hook/'.length);
+        const slashIdx = rest.indexOf('/');
+        const rawChannel = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+        const subpath = slashIdx === -1 ? '' : rest.slice(slashIdx);
+        const channel = normalizeChannelId(rawChannel);
+        if (!channel) {
+          return Response.json(
+            { error: 'Invalid channel name. Use 2-48 lowercase letters, digits, hyphens, or underscores.' },
+            { status: 400, headers: { ...JSON_HEADERS, ...HOOK_CORS_HEADERS } },
+          );
+        }
+
+        if (request.method === 'OPTIONS' && request.headers.has('access-control-request-method')) {
+          return new Response(null, { status: 204, headers: { ...HOOK_CORS_HEADERS, ...SECURITY_HEADERS } });
+        }
+
+        const { event, config } = await webhookStore.captureRequest(
+          channel,
+          request,
+          url,
+          subpath,
+          client.ip,
+        );
+
+        const responseHeaders: Record<string, string> = {
+          ...NO_STORE,
+          ...SECURITY_HEADERS,
+          ...HOOK_CORS_HEADERS,
+          'X-Hook-Channel': channel,
+          'X-Hook-Event-Id': event.id,
+        };
+
+        if (config.status === 204 || request.method === 'HEAD') {
+          return new Response(null, { status: config.status, headers: responseHeaders });
+        }
+
+        if (config.body.length > 0) {
+          return new Response(config.body, {
+            status: config.status,
+            headers: {
+              ...responseHeaders,
+              'Content-Type': config.contentType || 'text/plain; charset=utf-8',
+            },
+          });
+        }
+
+        return Response.json(
+          {
+            ok: config.status >= 200 && config.status < 400,
+            channel,
+            eventId: event.id,
+            method: event.method,
+            receivedAt: event.receivedAt,
+            bytes: event.bodyBytes,
+          },
+          { status: config.status, headers: responseHeaders },
+        );
+      }
+
+      if (pathname.startsWith('/api/hook/')) {
+        const parts = pathname.slice('/api/hook/'.length).split('/').filter(Boolean);
+        const rawChannel = parts[0] ?? '';
+        const action = parts[1] ?? 'events';
+        const channel = normalizeChannelId(rawChannel);
+        if (!channel) {
+          return errorJson('Invalid channel name. Use 2-48 letters, digits, hyphens, or underscores.', 400);
+        }
+
+        if (action === 'stream') {
+          if (request.method !== 'GET') {
+            return new Response(null, { status: 405, headers: { Allow: 'GET', ...SECURITY_HEADERS } });
+          }
+          const encoder = new TextEncoder();
+          let cleanup: (() => void) | null = null;
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              const send = (eventName: string, payload: unknown) => {
+                try {
+                  controller.enqueue(encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`));
+                } catch {
+                  // Stream closed
+                }
+              };
+
+              send('init', {
+                channel,
+                events: webhookStore.getEvents(channel),
+                config: webhookStore.getConfig(channel),
+              });
+
+              const unsubscribe = webhookStore.subscribe(channel, (msg) => {
+                if ('type' in msg && msg.type === 'cleared') {
+                  send('cleared', { channel });
+                } else {
+                  send('request', msg);
+                }
+              });
+
+              const heartbeat = setInterval(() => {
+                try {
+                  controller.enqueue(encoder.encode(': ping\n\n'));
+                } catch {
+                  // Stream closed
+                }
+              }, 15_000);
+
+              cleanup = () => {
+                clearInterval(heartbeat);
+                unsubscribe();
+              };
+
+              request.signal.addEventListener(
+                'abort',
+                () => {
+                  cleanup?.();
+                  cleanup = null;
+                  try {
+                    controller.close();
+                  } catch {
+                    // Already closed
+                  }
+                },
+                { once: true },
+              );
+            },
+            cancel() {
+              cleanup?.();
+              cleanup = null;
+            },
+          });
+
+          return new Response(stream, {
+            headers: {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache, no-transform',
+              Connection: 'keep-alive',
+              'X-Accel-Buffering': 'no',
+              ...SECURITY_HEADERS,
+            },
+          });
+        }
+
+        if (action === 'events') {
+          if (request.method === 'GET') {
+            return Response.json(
+              {
+                channel,
+                events: webhookStore.getEvents(channel),
+                config: webhookStore.getConfig(channel),
+              },
+              { headers: JSON_HEADERS },
+            );
+          }
+          if (request.method === 'DELETE') {
+            webhookStore.clearChannel(channel);
+            return Response.json({ ok: true, channel }, { headers: JSON_HEADERS });
+          }
+          return new Response(null, { status: 405, headers: { Allow: 'GET, DELETE', ...SECURITY_HEADERS } });
+        }
+
+        if (action === 'config') {
+          if (request.method !== 'POST') {
+            return new Response(null, { status: 405, headers: { Allow: 'POST', ...SECURITY_HEADERS } });
+          }
+          try {
+            const payload = (await request.json()) as {
+              status?: number;
+              contentType?: string;
+              body?: string;
+            };
+            if (payload.status !== undefined && !isAllowedResponseStatus(Number(payload.status))) {
+              return errorJson('Unsupported HTTP status code.', 400);
+            }
+            const config = webhookStore.updateConfig(channel, {
+              status: payload.status !== undefined ? Number(payload.status) : undefined,
+              contentType: payload.contentType,
+              body: payload.body,
+            });
+            return Response.json({ ok: true, channel, config }, { headers: JSON_HEADERS });
+          } catch {
+            return errorJson('Invalid JSON config payload.', 400);
+          }
+        }
+
+        return errorJson(`Unknown hook API action: ${action}`, 404);
+      }
 
       if (pathname.startsWith('/api/')) {
         const hostHeader = request.headers.get('host');
