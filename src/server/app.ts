@@ -169,13 +169,37 @@ export function createApp(options: AppOptions = {}) {
           return new Response(null, { status: 204, headers: { ...HOOK_CORS_HEADERS, ...SECURITY_HEADERS } });
         }
 
-        const { event, config } = await webhookStore.captureRequest(
+        const capture = await webhookStore.captureRequest(
           channel,
           request,
           url,
           subpath,
           client.ip,
         );
+
+        if (!capture.captured) {
+          return Response.json(
+            {
+              ok: false,
+              channel,
+              limitReached: true,
+              maxEvents: webhookStore.getMaxEvents(),
+              error: `Channel reached its ${webhookStore.getMaxEvents()} request limit. Clear the channel to resume capturing.`,
+            },
+            {
+              status: 429,
+              headers: {
+                ...NO_STORE,
+                ...SECURITY_HEADERS,
+                ...HOOK_CORS_HEADERS,
+                'X-Hook-Channel': channel,
+                'X-Hook-Limit-Reached': 'true',
+              },
+            },
+          );
+        }
+
+        const { event, config } = capture;
 
         const responseHeaders: Record<string, string> = {
           ...NO_STORE,
@@ -237,10 +261,13 @@ export function createApp(options: AppOptions = {}) {
                 }
               };
 
+              const initialEvents = webhookStore.getEvents(channel);
               send('init', {
                 channel,
-                events: webhookStore.getEvents(channel),
+                events: initialEvents,
                 config: webhookStore.getConfig(channel),
+                maxEvents: webhookStore.getMaxEvents(),
+                limitReached: initialEvents.length >= webhookStore.getMaxEvents(),
               });
 
               const unsubscribe = webhookStore.subscribe(channel, (msg) => {
@@ -297,11 +324,14 @@ export function createApp(options: AppOptions = {}) {
 
         if (action === 'events') {
           if (request.method === 'GET') {
+            const events = webhookStore.getEvents(channel);
             return Response.json(
               {
                 channel,
-                events: webhookStore.getEvents(channel),
+                events,
                 config: webhookStore.getConfig(channel),
+                maxEvents: webhookStore.getMaxEvents(),
+                limitReached: events.length >= webhookStore.getMaxEvents(),
               },
               { headers: JSON_HEADERS },
             );

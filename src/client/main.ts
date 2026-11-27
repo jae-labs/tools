@@ -5424,6 +5424,7 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   }
 
   let events: WebhookEvent[] = [];
+  let maxEvents = 500;
   let selectedEventId: string | null = null;
   let currentConfig: WebhookChannelConfig = {
     status: 200,
@@ -5447,7 +5448,7 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   controlsEl.innerHTML = `
     <div class="flex flex-col gap-3">
       <div class="flex flex-col lg:flex-row lg:items-center gap-2.5">
-        <form id="hook-channel-form" class="flex flex-1 items-center gap-2 min-w-0">
+        <form id="hook-channel-form" class="flex flex-1 items-center min-w-0">
           <div class="flex flex-1 items-center rounded-lg border border-white/15 bg-[#050505] overflow-hidden focus-within:border-[#00ffff]/70 min-w-0">
             <span class="px-3 py-2.5 font-fira text-xs text-[#777] bg-white/5 border-r border-white/10 shrink-0 select-none">/hook/</span>
             <input
@@ -5461,46 +5462,33 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
               aria-label="Webhook path slug"
               class="w-full min-w-0 bg-transparent px-3 py-2.5 font-fira text-xs sm:text-sm text-white placeholder-[#666] outline-none"
             />
+            <button
+              id="hook-new-btn"
+              type="button"
+              title="Generate a new random path"
+              class="inline-flex items-center gap-1.5 px-3 py-2.5 border-l border-white/10 bg-white/5 font-fira text-[10px] font-semibold uppercase tracking-wider text-[#ccc] hover:text-[#00ffff] hover:bg-[#00ffff]/10 transition-colors cursor-pointer shrink-0"
+            >
+              ${renderIconSvg(RefreshCw, 12)} NEW PATH
+            </button>
           </div>
-          <button
-            type="submit"
-            class="rounded-lg border border-white/15 bg-[#050505] px-3.5 py-2.5 font-fira text-xs font-semibold uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer shrink-0"
-          >
-            LISTEN
-          </button>
         </form>
 
-        <div class="flex flex-wrap items-center gap-2 shrink-0">
-          <span
-            id="hook-live-badge"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-amber-300"
-          >
-            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            <span>CONNECTING</span>
-          </span>
-
+        <div class="flex items-center gap-2 shrink-0">
+          <label for="hook-status-select" class="font-fira text-[10px] font-bold uppercase tracking-[0.18em] text-[#858585] shrink-0">REPLY</label>
           <select
             id="hook-status-select"
             aria-label="Response HTTP status"
             class="cyber-select !py-2 !text-xs"
             title="HTTP status returned to callers"
           >
-            <option value="200">Reply 200 OK</option>
-            <option value="201">Reply 201 Created</option>
-            <option value="202">Reply 202 Accepted</option>
-            <option value="204">Reply 204 No Content</option>
-            <option value="400">Reply 400 Bad Request</option>
-            <option value="404">Reply 404 Not Found</option>
-            <option value="500">Reply 500 Error</option>
+            <option value="200">200 OK</option>
+            <option value="201">201 Created</option>
+            <option value="202">202 Accepted</option>
+            <option value="204">204 No Content</option>
+            <option value="400">400 Bad Request</option>
+            <option value="404">404 Not Found</option>
+            <option value="500">500 Error</option>
           </select>
-
-          <button
-            id="hook-new-btn"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#050505] px-3 py-2 font-fira text-[11px] uppercase tracking-wider text-[#ccc] hover:border-white/35 hover:text-white transition-colors cursor-pointer"
-          >
-            ${renderIconSvg(RefreshCw, 13)} NEW PATH
-          </button>
         </div>
       </div>
 
@@ -5524,13 +5512,6 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           >
             ${renderIconSvg(Send, 12)} SEND TEST
           </button>
-          <button
-            id="hook-clear-btn"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/35 bg-rose-950/20 px-3 py-1.5 font-fira text-[11px] uppercase tracking-wider text-rose-300 hover:border-rose-400/70 transition-colors cursor-pointer"
-          >
-            ${renderIconSvg(Trash2, 12)} CLEAR
-          </button>
         </div>
       </div>
     </div>
@@ -5538,13 +5519,11 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
   const channelInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
   const channelForm = controlsEl.querySelector<HTMLFormElement>('#hook-channel-form')!;
-  const liveBadge = controlsEl.querySelector<HTMLElement>('#hook-live-badge')!;
   const statusSelect = controlsEl.querySelector<HTMLSelectElement>('#hook-status-select')!;
   const fullUrlEl = controlsEl.querySelector<HTMLElement>('#hook-full-url')!;
   const copyUrlBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-copy-url-btn')!;
   const sendTestBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-send-test-btn')!;
   const newBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-new-btn')!;
-  const clearBtn = controlsEl.querySelector<HTMLButtonElement>('#hook-clear-btn')!;
 
   const updateUrlDisplay = () => {
     const url = getHookUrl();
@@ -5555,20 +5534,11 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     }
   };
 
-  const setLiveStatus = (state: 'live' | 'connecting' | 'error') => {
-    if (state === 'live') {
-      liveBadge.className =
-        'inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-emerald-300';
-      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>LIVE</span>`;
-    } else if (state === 'connecting') {
-      liveBadge.className =
-        'inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-amber-300';
-      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>CONNECTING</span>`;
-    } else {
-      liveBadge.className =
-        'inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-2 font-fira text-[10px] font-bold uppercase tracking-widest text-rose-300';
-      liveBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>RECONNECTING</span>`;
-    }
+  const clearChannelEvents = async () => {
+    await fetch(`/api/hook/${encodeURIComponent(channel)}/events`, { method: 'DELETE' });
+    events = [];
+    selectedEventId = null;
+    renderEventsUi();
   };
 
   const renderEventsUi = () => {
@@ -5584,7 +5554,7 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
             </div>
           </div>
           ${rawOutputBlock('QUICK TEST WITH CURL', sampleCurl)}
-          <p class="font-fira text-[11px] text-[#666]">In-memory capture buffer holds the 50 most recent requests per path (up to 256 KiB per body).</p>
+          <p class="font-fira text-[11px] text-[#666]">Captures up to ${maxEvents} requests per path (up to 256 KiB per body), then pauses until cleared.</p>
         </div>
       `;
       bindCopyButtons(outputEl);
@@ -5593,6 +5563,7 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
     const activeEvent = events.find((e) => e.id === selectedEventId) ?? events[0];
     selectedEventId = activeEvent.id;
+    const isFull = events.length >= maxEvents;
 
     const formattedBody =
       activeEvent.bodyJson !== null
@@ -5607,16 +5578,36 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
     const queryEntries = Object.entries(activeEvent.query);
     const headerEntries = Object.entries(activeEvent.headers).sort(([a], [b]) => a.localeCompare(b));
+    const headersText = headerEntries.map(([k, v]) => `${k}: ${v}`).join('\n');
     const replayCurl = buildReplayCurl(window.location.origin, activeEvent);
 
     outputEl.innerHTML = `
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         <!-- Request Feed -->
-        <div class="lg:col-span-4 rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
-          <div class="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/60">
-            <span class="font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">INCOMING (${events.length} / 50)</span>
-            <span class="font-fira text-[10px] text-[#00ffff]">LIVE STREAM</span>
+        <div class="lg:col-span-4 rounded-xl border ${isFull ? 'border-rose-500/45' : 'border-white/10'} bg-[#050505] overflow-hidden">
+          <div class="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-white/10 bg-black/60">
+            <span class="font-fira text-[10px] uppercase tracking-[0.18em] ${isFull ? 'text-rose-400 font-bold' : 'text-[#858585]'}">LIVE STREAM (${events.length} / ${maxEvents})</span>
+            <button
+              id="hook-clear-btn"
+              type="button"
+              class="inline-flex items-center gap-1 rounded border ${
+                isFull
+                  ? 'border-rose-400/70 bg-rose-500/20 text-rose-200 animate-pulse'
+                  : 'border-rose-500/35 bg-rose-950/20 text-rose-300 hover:border-rose-400/70'
+              } px-2 py-1 font-fira text-[10px] font-semibold uppercase tracking-wider transition-colors cursor-pointer shrink-0"
+            >
+              ${renderIconSvg(Trash2, 11)} CLEAR
+            </button>
           </div>
+          ${
+            isFull
+              ? `
+                <div class="px-3.5 py-2 border-b border-rose-500/30 bg-rose-950/30 font-fira text-[10px] text-rose-300">
+                  Capture limit reached (${maxEvents}/${maxEvents}). Click <span class="font-bold text-white">CLEAR</span> to resume.
+                </div>
+              `
+              : ''
+          }
           <div class="flex flex-col divide-y divide-white/8 max-h-[540px] overflow-y-auto">
             ${events
               .map((ev) => {
@@ -5713,8 +5704,15 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           }
 
           <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
-            <div class="px-4 py-2.5 border-b border-white/10 bg-black/60 font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">
-              HTTP HEADERS (${headerEntries.length})
+            <div class="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-white/10 bg-black/60">
+              <span class="font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">HTTP HEADERS (${headerEntries.length})</span>
+              <button
+                id="hook-copy-headers-btn"
+                type="button"
+                class="px-2.5 py-1 rounded border border-white/15 bg-black font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer shrink-0"
+              >
+                COPY HEADERS
+              </button>
             </div>
             <div class="divide-y divide-white/8 max-h-[300px] overflow-y-auto">
               ${headerEntries
@@ -5745,9 +5743,19 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       });
     });
 
+    const clearBtn = outputEl.querySelector<HTMLButtonElement>('#hook-clear-btn');
+    clearBtn?.addEventListener('click', () => {
+      void clearChannelEvents();
+    });
+
     const copyCurlBtn = outputEl.querySelector<HTMLButtonElement>('#hook-copy-curl-btn');
     copyCurlBtn?.addEventListener('click', () => {
       void copyText(replayCurl, copyCurlBtn, 'COPY CURL');
+    });
+
+    const copyHeadersBtn = outputEl.querySelector<HTMLButtonElement>('#hook-copy-headers-btn');
+    copyHeadersBtn?.addEventListener('click', () => {
+      void copyText(headersText, copyHeadersBtn, 'COPY HEADERS');
     });
   };
 
@@ -5756,15 +5764,10 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     eventSource = null;
     if (disposed) return;
 
-    setLiveStatus('connecting');
     updateUrlDisplay();
 
     const es = new EventSource(`/api/hook/${encodeURIComponent(channel)}/stream`);
     eventSource = es;
-
-    es.addEventListener('open', () => {
-      if (!disposed) setLiveStatus('live');
-    });
 
     es.addEventListener('init', (msg) => {
       if (disposed) return;
@@ -5772,14 +5775,17 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         const data = JSON.parse((msg as MessageEvent<string>).data) as {
           events: WebhookEvent[];
           config: WebhookChannelConfig;
+          maxEvents?: number;
         };
+        if (typeof data.maxEvents === 'number' && data.maxEvents > 0) {
+          maxEvents = data.maxEvents;
+        }
         events = data.events ?? [];
         if (data.config) {
           currentConfig = data.config;
           statusSelect.value = String(currentConfig.status);
         }
         selectedEventId = events[0]?.id ?? null;
-        setLiveStatus('live');
         renderEventsUi();
       } catch {
         // Ignore malformed init event
@@ -5790,8 +5796,9 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       if (disposed) return;
       try {
         const ev = JSON.parse((msg as MessageEvent<string>).data) as WebhookEvent;
+        if (events.length >= maxEvents) return;
         const wasAtLatest = events.length === 0 || selectedEventId === events[0]?.id;
-        events = [ev, ...events.filter((e) => e.id !== ev.id)].slice(0, 50);
+        events = [ev, ...events.filter((e) => e.id !== ev.id)].slice(0, maxEvents);
         if (wasAtLatest) {
           selectedEventId = ev.id;
         }
@@ -5807,16 +5814,15 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       selectedEventId = null;
       renderEventsUi();
     });
-
-    es.onerror = () => {
-      if (!disposed) setLiveStatus('error');
-    };
   };
 
-  channelForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+  const applyChannelInput = () => {
     const cleaned = sanitizeChannelInput(channelInput.value);
     if (cleaned.length < 2) {
+      channelInput.value = channel;
+      return;
+    }
+    if (cleaned === channel) {
       channelInput.value = channel;
       return;
     }
@@ -5826,6 +5832,15 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     events = [];
     selectedEventId = null;
     connectStream();
+  };
+
+  channelForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    applyChannelInput();
+  });
+
+  channelInput.addEventListener('blur', () => {
+    applyChannelInput();
   });
 
   newBtn.addEventListener('click', () => {
@@ -5860,13 +5875,6 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     } finally {
       sendTestBtn.disabled = false;
     }
-  });
-
-  clearBtn.addEventListener('click', async () => {
-    await fetch(`/api/hook/${encodeURIComponent(channel)}/events`, { method: 'DELETE' });
-    events = [];
-    selectedEventId = null;
-    renderEventsUi();
   });
 
   statusSelect.addEventListener('change', async () => {

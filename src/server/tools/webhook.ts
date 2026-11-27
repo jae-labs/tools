@@ -156,9 +156,13 @@ export class WebhookStore {
 
   constructor(options: WebhookStoreOptions = {}) {
     this.maxChannels = options.maxChannels ?? 200;
-    this.maxEventsPerChannel = options.maxEventsPerChannel ?? 50;
+    this.maxEventsPerChannel = options.maxEventsPerChannel ?? 500;
     this.maxBodyBytes = options.maxBodyBytes ?? 256 * 1024;
     this.channelTtlMs = options.channelTtlMs ?? 2 * 60 * 60 * 1000;
+  }
+
+  getMaxEvents(): number {
+    return this.maxEventsPerChannel;
   }
 
   private pruneExpired(now = Date.now()): void {
@@ -211,8 +215,16 @@ export class WebhookStore {
     url: URL,
     subpath: string,
     sourceIp: string,
-  ): Promise<{ event: WebhookEvent; config: WebhookChannelConfig }> {
+  ): Promise<
+    | { captured: true; limitReached: boolean; event: WebhookEvent; config: WebhookChannelConfig }
+    | { captured: false; limitReached: true; event: null; config: WebhookChannelConfig }
+  > {
     const state = this.getOrCreateChannel(channel);
+    if (state.events.length >= this.maxEventsPerChannel) {
+      state.lastActiveMs = Date.now();
+      return { captured: false, limitReached: true, event: null, config: { ...state.config } };
+    }
+
     const contentType = request.headers.get('content-type') ?? '';
     const { bytes, totalBytes, truncated } = await readBoundedBody(request, this.maxBodyBytes);
     const { text, json } = decodeBody(bytes, contentType);
@@ -238,9 +250,6 @@ export class WebhookStore {
     };
 
     state.events.unshift(event);
-    if (state.events.length > this.maxEventsPerChannel) {
-      state.events.length = this.maxEventsPerChannel;
-    }
     state.lastActiveMs = nowMs;
 
     for (const listener of state.listeners) {
@@ -251,7 +260,12 @@ export class WebhookStore {
       }
     }
 
-    return { event, config: { ...state.config } };
+    return {
+      captured: true,
+      limitReached: state.events.length >= this.maxEventsPerChannel,
+      event,
+      config: { ...state.config },
+    };
   }
 
   getEvents(channel: string): WebhookEvent[] {

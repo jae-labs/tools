@@ -12,43 +12,53 @@ describe('Webhook / Payload Inspector', () => {
     expect(normalizeChannelId('a'.repeat(49))).toBeNull();
   });
 
-  it('captures requests, parses JSON, truncates oversized bodies, and enforces ring buffer', async () => {
+  it('captures requests, parses JSON, truncates oversized bodies, and stops at maxEvents until cleared', async () => {
     const store = new WebhookStore({ maxEventsPerChannel: 2, maxBodyBytes: 16 });
     const req1 = new Request('http://localhost/hook/demo/orders?env=prod&tag=a&tag=b', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-custom': '42' },
       body: JSON.stringify({ ok: true }),
     });
-    const { event: ev1 } = await store.captureRequest(
-      'demo',
-      req1,
-      new URL(req1.url),
-      '/orders',
-      '203.0.113.5',
-    );
-    expect(ev1.method).toBe('POST');
-    expect(ev1.subpath).toBe('/orders');
-    expect(ev1.query).toEqual({ env: 'prod', tag: ['a', 'b'] });
-    expect(ev1.headers['x-custom']).toBe('42');
-    expect(ev1.bodyJson).toEqual({ ok: true });
-    expect(ev1.bodyTruncated).toBe(false);
+    const cap1 = await store.captureRequest('demo', req1, new URL(req1.url), '/orders', '203.0.113.5');
+    expect(cap1.captured).toBe(true);
+    if (!cap1.captured) throw new Error('expected capture');
+    expect(cap1.event.method).toBe('POST');
+    expect(cap1.event.subpath).toBe('/orders');
+    expect(cap1.event.query).toEqual({ env: 'prod', tag: ['a', 'b'] });
+    expect(cap1.event.headers['x-custom']).toBe('42');
+    expect(cap1.event.bodyJson).toEqual({ ok: true });
+    expect(cap1.event.bodyTruncated).toBe(false);
 
     const req2 = new Request('http://localhost/hook/demo', {
       method: 'PUT',
       body: '0123456789abcdefghijklmnopqrstuvwxyz',
     });
-    const { event: ev2 } = await store.captureRequest('demo', req2, new URL(req2.url), '', '203.0.113.6');
-    expect(ev2.bodyTruncated).toBe(true);
-    expect(ev2.bodyText).toBe('0123456789abcdef');
-    expect(ev2.bodyBytes).toBe(36);
+    const cap2 = await store.captureRequest('demo', req2, new URL(req2.url), '', '203.0.113.6');
+    expect(cap2.captured).toBe(true);
+    expect(cap2.limitReached).toBe(true);
+    if (!cap2.captured) throw new Error('expected capture');
+    expect(cap2.event.bodyTruncated).toBe(true);
+    expect(cap2.event.bodyText).toBe('0123456789abcdef');
+    expect(cap2.event.bodyBytes).toBe(36);
 
+    // Third request should stop capturing until cleared
     const req3 = new Request('http://localhost/hook/demo', { method: 'DELETE' });
-    await store.captureRequest('demo', req3, new URL(req3.url), '', '203.0.113.7');
+    const cap3 = await store.captureRequest('demo', req3, new URL(req3.url), '', '203.0.113.7');
+    expect(cap3.captured).toBe(false);
+    expect(cap3.limitReached).toBe(true);
 
     const events = store.getEvents('demo');
     expect(events).toHaveLength(2);
-    expect(events[0].method).toBe('DELETE');
-    expect(events[1].method).toBe('PUT');
+    expect(events[0].method).toBe('PUT');
+    expect(events[1].method).toBe('POST');
+
+    // Clearing resumes capturing
+    store.clearChannel('demo');
+    const req4 = new Request('http://localhost/hook/demo', { method: 'DELETE' });
+    const cap4 = await store.captureRequest('demo', req4, new URL(req4.url), '', '203.0.113.8');
+    expect(cap4.captured).toBe(true);
+    expect(store.getEvents('demo')).toHaveLength(1);
+    expect(store.getEvents('demo')[0].method).toBe('DELETE');
   });
 
   it('handles /hook, /api/hook events, config, clear, and live SSE stream through createApp', async () => {
