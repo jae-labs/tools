@@ -5413,16 +5413,7 @@ function buildReplayCurl(origin: string, ev: WebhookEvent): string {
 }
 
 function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
-  const STORAGE_KEY = 'jae-tools-hook-channel';
-  let channel = '';
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY) ?? '';
-    const cleaned = sanitizeChannelInput(saved);
-    channel = cleaned.length >= 2 ? cleaned : generateRandomChannel();
-  } catch {
-    channel = generateRandomChannel();
-  }
-
+  let channel = generateRandomChannel();
   let events: WebhookEvent[] = [];
   let maxEvents = 500;
   let selectedEventId: string | null = null;
@@ -5433,15 +5424,6 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   };
   let eventSource: EventSource | null = null;
   let disposed = false;
-
-  const saveChannel = (next: string) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Ignore storage errors
-    }
-  };
-  saveChannel(channel);
 
   const getHookUrl = () => `${window.location.origin}/hook/${channel}`;
 
@@ -5828,7 +5810,6 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     }
     channel = cleaned;
     channelInput.value = channel;
-    saveChannel(channel);
     events = [];
     selectedEventId = null;
     connectStream();
@@ -5846,7 +5827,6 @@ function mountHook(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   newBtn.addEventListener('click', () => {
     channel = generateRandomChannel();
     channelInput.value = channel;
-    saveChannel(channel);
     events = [];
     selectedEventId = null;
     connectStream();
@@ -6333,13 +6313,15 @@ function setupNavigationControls(): void {
     chevron.innerHTML = renderIconSvg(ChevronDown, 14);
   }
 
-  trigger?.addEventListener('click', () => {
+  trigger?.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation();
     setPickerOpen(!pickerOpen);
   });
 
   document.addEventListener('click', (e: MouseEvent) => {
     if (!pickerOpen || !picker) return;
-    if (!picker.contains(e.target as Node)) {
+    const target = e.target as Node | null;
+    if (target && !picker.contains(target)) {
       setPickerOpen(false);
     }
   });
