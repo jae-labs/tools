@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildAsciiArt } from '../src/shared/ascii.ts';
-import { evaluateRegex, explainRegexTokens, normalizeRegexFlags } from '../src/shared/regex.ts';
+import {
+  REGEX_QUICK_REFERENCE,
+  evaluateRegex,
+  explainRegexTokens,
+  generateRegexCode,
+  normalizeRegexFlags,
+  runRegexUnitTests,
+} from '../src/shared/regex.ts';
 
 describe('regex tester & explainer', () => {
   it('normalizes flags, finds all matches, capture groups, named groups, and replacement', () => {
@@ -39,6 +46,24 @@ describe('regex tester & explainer', () => {
     expect(tokens.some((t) => t.token === '{1,3}' && t.category === 'quantifier')).toBe(true);
     expect(tokens.some((t) => t.token === '(?<last>' && t.description.includes('last'))).toBe(true);
     expect(tokens.some((t) => t.token === '|' && t.category === 'alternation')).toBe(true);
+  });
+
+  it('generates multi-language code snippets, runs unit tests, and exposes quick reference', () => {
+    expect(generateRegexCode('javascript', '(?<id>\\d+)', 'gi')).toContain('matchAll');
+    expect(generateRegexCode('python', '(?<id>\\d+)', 'gi')).toContain('(?P<id>');
+    expect(generateRegexCode('go', '(?<id>\\d+)', 'i')).toContain('regexp.MustCompile');
+    expect(generateRegexCode('rust', '\\d+', 'i')).toContain('Regex::new');
+    expect(generateRegexCode('ripgrep', '\\d+', 'i')).toContain('rg -n --pcre2 -i');
+
+    const results = runRegexUnitTests('^\\d{3}$', 'g', [
+      { id: '1', input: '123', expect: 'should_match' },
+      { id: '2', input: 'abc', expect: 'should_not_match' },
+      { id: '3', input: '1234', expect: 'should_match' },
+    ]);
+    expect(results[0]?.passed).toBe(true);
+    expect(results[1]?.passed).toBe(true);
+    expect(results[2]?.passed).toBe(false);
+    expect(REGEX_QUICK_REFERENCE.length).toBeGreaterThan(15);
   });
 });
 

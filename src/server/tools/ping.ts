@@ -42,7 +42,8 @@ export interface TracerouteResult {
   target: string;
   resolvedIp: string;
   family: IpFamily;
-  method: 'traceroute' | 'fallback';
+  method: 'tcp-traceroute' | 'fallback';
+  port: number;
   completed: boolean;
   note: string | null;
   hops: TracerouteHop[];
@@ -54,7 +55,8 @@ export interface SingleTracerouteHopResult {
   target: string;
   resolvedIp: string;
   family: IpFamily;
-  method: 'traceroute' | 'fallback';
+  method: 'tcp-traceroute' | 'fallback';
+  port: number;
   hop: TracerouteHop;
   reached: boolean;
   note: string | null;
@@ -280,23 +282,33 @@ export function parseTracerouteOutput(stdout: string): TracerouteHop[] {
   return hops;
 }
 
+function clampTcpPort(port?: number): number {
+  if (typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535) {
+    return port;
+  }
+  return 443;
+}
+
 export async function performTraceroute(
   rawTarget: string,
   maxHops = 18,
+  port = 443,
 ): Promise<TracerouteResult> {
   const started = performance.now();
   const target = await resolvePublicTarget(rawTarget);
   const clampedHops = Math.min(Math.max(Math.trunc(maxHops), 1), 24);
+  const tcpPort = clampTcpPort(port);
 
   const candidates: Array<{ bin: string; args: string[] }> =
     target.family === 'IPv6'
       ? [
-          { bin: 'traceroute6', args: ['-n', '-q', '1', '-m', String(clampedHops), '-w', '1', target.ip] },
-          { bin: 'traceroute', args: ['-6', '-n', '-q', '1', '-m', String(clampedHops), '-w', '1', target.ip] },
+          { bin: 'traceroute', args: ['-6', '-T', '-n', '-q', '1', '-p', String(tcpPort), '-m', String(clampedHops), '-w', '1', target.ip] },
+          { bin: 'traceroute6', args: ['-P', 'tcp', '-n', '-q', '1', '-p', String(tcpPort), '-m', String(clampedHops), '-w', '1', target.ip] },
         ]
       : [
-          { bin: 'traceroute', args: ['-n', '-q', '1', '-m', String(clampedHops), '-w', '1', target.ip] },
-          { bin: 'tracepath', args: ['-n', '-m', String(clampedHops), target.ip] },
+          { bin: 'traceroute', args: ['-T', '-n', '-q', '1', '-p', String(tcpPort), '-m', String(clampedHops), '-w', '1', target.ip] },
+          { bin: 'traceroute', args: ['-P', 'tcp', '-n', '-q', '1', '-p', String(tcpPort), '-m', String(clampedHops), '-w', '1', target.ip] },
+          { bin: 'tcptraceroute', args: ['-n', '-q', '1', '-m', String(clampedHops), '-w', '1', target.ip, String(tcpPort)] },
         ];
 
   for (const candidate of candidates) {
@@ -309,7 +321,8 @@ export async function performTraceroute(
           target: target.input,
           resolvedIp: target.ip,
           family: target.family,
-          method: 'traceroute',
+          method: 'tcp-traceroute',
+          port: tcpPort,
           completed,
           note: null,
           hops,
@@ -318,20 +331,20 @@ export async function performTraceroute(
         };
       }
     } catch {
-      // Try next binary or fallback
+      // Try next TCP traceroute binary or fallback
     }
   }
 
-  // Graceful fallback when raw UDP/ICMP traceroute is unavailable in serverless/container runtime
-  const probe = await tcpConnectProbe(target.ip, 443, 2500);
+  // Graceful fallback when raw TCP SYN traceroute is restricted in container runtime
+  const probe = await tcpConnectProbe(target.ip, tcpPort, 2500);
   const fallbackHop: TracerouteHop = {
     hop: 1,
     address: target.ip,
     rttMs: probe.rttMs,
     timedOut: !probe.ok,
     rawLine: probe.ok
-      ? `1  ${target.ip}  ${probe.rttMs?.toFixed(2)} ms  (direct TCP:443 reachability)`
-      : `1  *  ${target.ip}  (TCP:443 timed out)`,
+      ? `1  ${target.ip}:${tcpPort}  ${probe.rttMs?.toFixed(2)} ms  (direct TCP:${tcpPort} reachability)`
+      : `1  *  ${target.ip}:${tcpPort}  (TCP:${tcpPort} timed out)`,
   };
 
   return {
@@ -339,12 +352,13 @@ export async function performTraceroute(
     resolvedIp: target.ip,
     family: target.family,
     method: 'fallback',
+    port: tcpPort,
     completed: probe.ok,
-    note: 'Raw ICMP/UDP traceroute is restricted in this container runtime. Showing direct TCP reachability to the destination.',
+    note: `Raw TCP SYN hop-by-hop traceroute requires elevated socket privileges in this container. Showing direct TCP:${tcpPort} reachability to the destination.`,
     hops: [fallbackHop],
     raw: [
-      `traceroute to ${target.input} (${target.ip}), ${clampedHops} hops max`,
-      `[runtime notice] raw ICMP/UDP sockets unavailable; fell back to direct TCP:443 check`,
+      `tcp traceroute to ${target.input} (${target.ip}) port ${tcpPort}, ${clampedHops} hops max`,
+      `[runtime notice] raw TCP SYN sockets unavailable; fell back to direct TCP:${tcpPort} check`,
       fallbackHop.rawLine,
     ].join('\n'),
     durationMs: Math.round(performance.now() - started),
@@ -354,18 +368,22 @@ export async function performTraceroute(
 export async function performSingleTracerouteHop(
   rawTarget: string,
   hopNumber: number,
+  port = 443,
 ): Promise<SingleTracerouteHopResult> {
   const target = await resolvePublicTarget(rawTarget);
   const hop = Math.min(Math.max(Math.trunc(hopNumber), 1), 30);
+  const tcpPort = clampTcpPort(port);
 
   const candidates: Array<{ bin: string; args: string[] }> =
     target.family === 'IPv6'
       ? [
-          { bin: 'traceroute6', args: ['-n', '-q', '1', '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
-          { bin: 'traceroute', args: ['-6', '-n', '-q', '1', '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
+          { bin: 'traceroute', args: ['-6', '-T', '-n', '-q', '1', '-p', String(tcpPort), '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
+          { bin: 'traceroute6', args: ['-P', 'tcp', '-n', '-q', '1', '-p', String(tcpPort), '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
         ]
       : [
-          { bin: 'traceroute', args: ['-n', '-q', '1', '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
+          { bin: 'traceroute', args: ['-T', '-n', '-q', '1', '-p', String(tcpPort), '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
+          { bin: 'traceroute', args: ['-P', 'tcp', '-n', '-q', '1', '-p', String(tcpPort), '-f', String(hop), '-m', String(hop), '-w', '1', target.ip] },
+          { bin: 'tcptraceroute', args: ['-n', '-q', '1', '-f', String(hop), '-m', String(hop), '-w', '1', target.ip, String(tcpPort)] },
         ];
 
   for (const candidate of candidates) {
@@ -378,7 +396,8 @@ export async function performSingleTracerouteHop(
           target: target.input,
           resolvedIp: target.ip,
           family: target.family,
-          method: 'traceroute',
+          method: 'tcp-traceroute',
+          port: tcpPort,
           hop: { ...parsed, hop },
           reached: parsed.address === target.ip,
           note: null,
@@ -389,16 +408,16 @@ export async function performSingleTracerouteHop(
     }
   }
 
-  // Graceful fallback when raw UDP/ICMP traceroute is unavailable in serverless/container runtime
-  const probe = await tcpConnectProbe(target.ip, 443, 2500);
+  // Graceful fallback when raw TCP SYN traceroute is restricted in container runtime
+  const probe = await tcpConnectProbe(target.ip, tcpPort, 2500);
   const fallbackHop: TracerouteHop = {
     hop: 1,
     address: target.ip,
     rttMs: probe.rttMs,
     timedOut: !probe.ok,
     rawLine: probe.ok
-      ? `1  ${target.ip}  ${probe.rttMs?.toFixed(2)} ms  (direct TCP:443 reachability)`
-      : `1  *  ${target.ip}  (TCP:443 timed out)`,
+      ? `1  ${target.ip}:${tcpPort}  ${probe.rttMs?.toFixed(2)} ms  (direct TCP:${tcpPort} reachability)`
+      : `1  *  ${target.ip}:${tcpPort}  (TCP:${tcpPort} timed out)`,
   };
 
   return {
@@ -406,8 +425,9 @@ export async function performSingleTracerouteHop(
     resolvedIp: target.ip,
     family: target.family,
     method: 'fallback',
+    port: tcpPort,
     hop: fallbackHop,
     reached: true,
-    note: 'Raw ICMP/UDP traceroute is restricted in this container runtime. Showing direct TCP reachability to the destination.',
+    note: `Raw TCP SYN hop-by-hop traceroute requires elevated socket privileges in this container. Showing direct TCP:${tcpPort} reachability to the destination.`,
   };
 }

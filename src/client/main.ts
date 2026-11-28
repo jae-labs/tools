@@ -5,6 +5,7 @@ import {
   ArrowDownAZ,
   ArrowLeftRight,
   Binary,
+  Braces,
   Calculator,
   CalendarClock,
   CalendarDays,
@@ -13,15 +14,23 @@ import {
   Clock,
   CodeXml,
   Copy,
+  Crop,
   EthernetPort,
   Euro,
   FileSearch,
+  FileText,
   Fingerprint,
   Gauge,
   Globe,
+  Hash,
+  KeyRound,
+  Lightbulb,
   Link2,
+  Lock,
   MailCheck,
   Network,
+  Palette,
+  Pipette,
   Play,
   Radar,
   RefreshCw,
@@ -31,11 +40,15 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Shuffle,
+  Sprout,
   Square,
+  Terminal,
   Timer,
   Trash2,
   Type,
   Webhook,
+  X,
   createElement,
 } from 'lucide';
 import type { GeoInfo } from '../server/geo.ts';
@@ -58,7 +71,15 @@ import {
   type AsciiStyle,
 } from '../shared/ascii.ts';
 import { parseCronExpression } from '../shared/cron.ts';
-import { evaluateRegex, type RegexMatchEntry } from '../shared/regex.ts';
+import {
+  REGEX_QUICK_REFERENCE,
+  evaluateRegex,
+  generateRegexCode,
+  runRegexUnitTests,
+  type RegexCodeLanguage,
+  type RegexMatchEntry,
+  type RegexUnitTestCase,
+} from '../shared/regex.ts';
 import {
   decodeBase64Utf8,
   decodeUrlValue,
@@ -76,6 +97,7 @@ import {
   type EpochConversionResult,
   type EpochPrecision,
 } from '../shared/epoch.ts';
+import { scoreFuzzyCandidate } from '../shared/fuzzy.ts';
 import {
   DEFAULT_CONTRACTOR_INPUTS,
   DEFAULT_TAX_INPUTS,
@@ -86,6 +108,12 @@ import {
   type TaxInputs,
 } from '../shared/irishtax.ts';
 import { sortJsonString } from '../shared/jsonsort.ts';
+import {
+  analyzeJsonTree,
+  formatJsonPath,
+  searchJsonTree,
+  type JsonPathSegment,
+} from '../shared/jsontree.ts';
 import { convertIpv4ToIpv6 } from '../shared/ipv4to6.ts';
 import { convertXmlToJson } from '../shared/xml2json.ts';
 import {
@@ -96,6 +124,54 @@ import {
   getCountryConfig,
   type CountryCode,
 } from '../shared/workdays.ts';
+import {
+  buildHarmonyPalette,
+  checkContrast,
+  formatColorOutputs,
+  hsvToRgb,
+  parseColor,
+  rgbToHsv,
+  rgbaToHex,
+  type RgbaColor,
+} from '../shared/color.ts';
+import {
+  BCRYPT_ROUNDS_DEFAULT,
+  BCRYPT_ROUNDS_MAX,
+  BCRYPT_ROUNDS_MIN,
+  computeAllHashes,
+  computeBcryptHash,
+  isBcryptHash,
+  matchExpectedHash,
+  parseBcryptRounds,
+  verifyBcryptHash,
+  type BcryptResult,
+  type HashAllResult,
+  type HashEncoding,
+} from '../shared/hash.ts';
+import {
+  DEFAULT_MEMORABLE_OPTIONS,
+  DEFAULT_PIN_OPTIONS,
+  DEFAULT_RANDOM_OPTIONS,
+  MEMORABLE_WORDS_MAX,
+  MEMORABLE_WORDS_MIN,
+  PIN_LENGTH_MAX,
+  PIN_LENGTH_MIN,
+  RANDOM_LENGTH_MAX,
+  RANDOM_LENGTH_MIN,
+  generatePassword,
+  type MemorablePasswordOptions,
+  type MemorableSeparator,
+  type PasswordResult,
+  type PasswordType,
+  type PinPasswordOptions,
+  type RandomPasswordOptions,
+} from '../shared/password.ts';
+import {
+  MAX_PORTS_PER_SCAN,
+  PORT_PRESET_SETS,
+  formatPortExpression,
+  parsePortExpression,
+} from '../shared/ports.ts';
 import { resolveRegionNodes, type PrismaRegion } from '../shared/regions.ts';
 import {
   SLA_PRESET_TIERS,
@@ -105,6 +181,15 @@ import {
   parseDurationString,
   type SlaPeriodId,
 } from '../shared/sla.ts';
+import {
+  DEFAULT_SOIL_INPUTS,
+  SOIL_MATERIALS,
+  calculateSoilVolume,
+  type SoilInputs,
+  type SoilLengthUnit,
+  type SoilMaterialId,
+  type SoilShape,
+} from '../shared/soil.ts';
 import { calculateSubnet, type SubnetResult } from '../shared/subnet.ts';
 import {
   BANDWIDTH_UNITS,
@@ -131,6 +216,25 @@ import {
   type SpeedTestSnapshot,
   type TestSequenceMode,
 } from './speedtest/engine.ts';
+import {
+  mountChmodTool,
+  mountDataConvertTool,
+  mountDiffTool,
+  mountHtmlHexTool,
+  mountMarkdownTool,
+  mountUuidTool,
+} from './tools/dev-tools.ts';
+import { mountPaintTool } from './tools/calc-tools.ts';
+import { mountImageTool } from './tools/image-tools.ts';
+import { mountMacTool } from './tools/network-tools.ts';
+import {
+  mountDmarcDkimTool,
+  mountHeadersTool,
+  mountJwtTool,
+  mountSmtpTool,
+  mountTlsTool,
+} from './tools/security-tools.ts';
+import { mountTabbedTool } from './tools/ui-helpers.ts';
 
 type ToolId =
   | 'myip'
@@ -140,27 +244,46 @@ type ToolId =
   | 'propagation'
   | 'whois'
   | 'port'
-  | 'reverse'
+  | 'mac'
   | 'proxy'
   | 'rbl'
   | 'spf'
-  | 'geo'
+  | 'tls'
+  | 'headers'
+  | 'jwt'
   | 'bandwidth'
   | 'subnet'
   | 'sla'
   | 'epoch'
   | 'days'
   | 'jsonsort'
-  | 'xml2json'
   | 'base64'
-  | 'url'
   | 'cron'
   | 'regex'
+  | 'diff'
+  | 'uuid'
+  | 'chmod'
+  | 'markdown'
   | 'ascii'
-  | 'ipv4to6'
   | 'units'
   | 'hook'
-  | 'irishtax';
+  | 'irishtax'
+  | 'soil'
+  | 'paint'
+  | 'password'
+  | 'hash'
+  | 'color'
+  | 'image';
+
+const TOOL_HASH_ALIASES: Record<string, { tool: ToolId; tab: string }> = {
+  geo: { tool: 'myip', tab: 'geo' },
+  reverse: { tool: 'dns', tab: 'reverse' },
+  smtp: { tool: 'spf', tab: 'smtp' },
+  jsonbrowser: { tool: 'jsonsort', tab: 'browser' },
+  xml2json: { tool: 'jsonsort', tab: 'convert' },
+  url: { tool: 'base64', tab: 'url' },
+  ipv4to6: { tool: 'subnet', tab: 'ipv4to6' },
+};
 
 type ToolCategoryId = 'network' | 'dns-security' | 'calculators' | 'datetime' | 'dev';
 
@@ -195,59 +318,56 @@ const TOOLS: ToolMeta[] = [
   {
     id: 'myip',
     category: 'network',
-    name: 'What Is My IP',
-    shortName: 'What Is My IP',
-    desc: 'Inspect your dual-stack IPv4 & IPv6 addresses, ISP, ASN, geolocation, and request headers.',
+    name: 'IP & Geo Lookup',
+    shortName: 'IP & Geo',
+    desc: 'Inspect your dual-stack IPv4 & IPv6 addresses and headers, or look up country, city, ISP, ASN, and coordinates for any IP or domain.',
     icon: Fingerprint,
-    keywords: ['ip', 'ipv4', 'ipv6', 'isp', 'asn', 'headers', 'whoami'],
+    keywords: ['ip', 'ipv4', 'ipv6', 'isp', 'asn', 'headers', 'whoami', 'geo', 'geolocation', 'geoip', 'country', 'map'],
     presets: [],
     cliTemplate: (origin) => `curl -s "${origin}/api/info"`,
   },
   {
     id: 'ping',
     category: 'network',
-    name: 'Online Ping',
-    shortName: 'Ping',
-    desc: 'Test host reachability and measure round-trip latency, jitter, and packet loss.',
+    name: 'TCP Ping',
+    shortName: 'TCP Ping',
+    desc: 'Measure TCP handshake round-trip latency, jitter, and packet loss to any host and port.',
     icon: Activity,
-    keywords: ['icmp', 'latency', 'rtt', 'jitter', 'packet loss'],
+    keywords: ['tcp', 'ping', 'latency', 'rtt', 'jitter', 'packet loss', 'port'],
     presets: [
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
       { label: 'google.com', value: 'google.com' },
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/ping?host=cloudflare.com&count=4"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/ping?host=google.com&mode=tcp&port=443&count=10"`,
   },
   {
     id: 'traceroute',
     category: 'network',
-    name: 'Traceroute',
-    shortName: 'Traceroute',
-    desc: 'Trace the network path and hop-by-hop latency to a destination host or IP.',
+    name: 'TCP Traceroute',
+    shortName: 'TCP Traceroute',
+    desc: 'Trace the TCP network path and hop-by-hop latency to a destination host and port.',
     icon: Route,
-    keywords: ['hops', 'route', 'path', 'mtr', 'network'],
+    keywords: ['tcp', 'hops', 'route', 'path', 'mtr', 'network', 'traceroute'],
     presets: [
+      { label: 'google.com', value: 'google.com' },
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/traceroute?host=1.1.1.1"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/traceroute?host=google.com&port=443"`,
   },
   {
     id: 'dns',
     category: 'dns-security',
-    name: 'DNS Lookup',
+    name: 'DNS & Reverse Lookup',
     shortName: 'DNS Lookup',
-    desc: 'Query A, AAAA, MX, NS, TXT, CNAME, SOA, CAA, SRV, and PTR records with TTLs.',
+    desc: 'Query A, AAAA, MX, NS, TXT, CNAME, SOA, CAA, SRV, and PTR records with TTLs, or verify Reverse DNS (FCrDNS).',
     icon: Search,
-    keywords: ['dig', 'nslookup', 'mx', 'txt', 'cname', 'aaaa', 'records'],
+    keywords: ['dig', 'nslookup', 'mx', 'txt', 'cname', 'aaaa', 'records', 'ptr', 'rdns', 'fcrdns', 'reverse'],
     presets: [
-      { label: 'justanother.engineer', value: 'justanother.engineer' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
-      { label: 'github.com', value: 'github.com' },
+      { label: 'google.com', value: 'google.com' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/dns?host=cloudflare.com&type=ALL"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/dns?host=google.com&type=ALL"`,
   },
   {
     id: 'propagation',
@@ -258,11 +378,9 @@ const TOOLS: ToolMeta[] = [
     icon: Radar,
     keywords: ['dns', 'global', 'resolvers', 'regions', 'ttl'],
     presets: [
-      { label: 'www.google.com', value: 'www.google.com' },
-      { label: 'justanother.engineer', value: 'justanother.engineer' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
+      { label: 'google.com', value: 'google.com' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/propagation?host=www.google.com&type=A"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/propagation?host=google.com&type=A"`,
   },
   {
     id: 'whois',
@@ -273,11 +391,10 @@ const TOOLS: ToolMeta[] = [
     icon: FileSearch,
     keywords: ['domain', 'registrar', 'rdap', 'owner', 'expiry'],
     presets: [
-      { label: 'justanother.engineer', value: 'justanother.engineer' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
+      { label: 'google.com', value: 'google.com' },
       { label: '1.1.1.1', value: '1.1.1.1' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/whois?query=cloudflare.com"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/whois?query=google.com"`,
   },
   {
     id: 'port',
@@ -288,26 +405,25 @@ const TOOLS: ToolMeta[] = [
     icon: Radar,
     keywords: ['tcp', 'open', 'firewall', 'socket', 'scan'],
     presets: [
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
-      { label: 'github.com', value: 'github.com' },
+      { label: 'google.com', value: 'google.com' },
       { label: '1.1.1.1', value: '1.1.1.1' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/port?host=cloudflare.com&ports=80,443,22"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/port?host=google.com&ports=80,443,22"`,
   },
   {
-    id: 'reverse',
-    category: 'dns-security',
-    name: 'Reverse Lookup',
-    shortName: 'Reverse DNS',
-    desc: 'Resolve an IPv4 or IPv6 address to its PTR hostname and verify FCrDNS.',
-    icon: RefreshCw,
-    keywords: ['ptr', 'rdns', 'fcrdns', 'hostname'],
+    id: 'mac',
+    category: 'network',
+    name: 'MAC Vendor / OUI Lookup',
+    shortName: 'MAC Lookup',
+    desc: 'Look up IEEE OUI vendors (54k+ MA-L/MA-M/MA-S blocks), decode UAA/LAA & multicast bits, search by vendor, or resolve ARP tables.',
+    icon: EthernetPort,
+    keywords: ['mac', 'oui', 'vendor', 'ieee', 'ethernet', 'arp', 'hardware', 'nic', 'manufacturer', 'laa'],
     presets: [
-      { label: '1.1.1.1', value: '1.1.1.1' },
-      { label: '8.8.8.8', value: '8.8.8.8' },
-      { label: '9.9.9.9', value: '9.9.9.9' },
+      { label: 'Cisco (00:00:0C)', value: '00:00:0C:12:34:56' },
+      { label: 'Raspberry Pi', value: 'B8:27:EB:11:22:33' },
+      { label: 'Docker LAA', value: '02:42:AC:11:00:02' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/reverse?ip=1.1.1.1"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/mac?mac=00:00:0C:12:34:56"`,
   },
   {
     id: 'proxy',
@@ -332,42 +448,64 @@ const TOOLS: ToolMeta[] = [
     icon: ShieldCheck,
     keywords: ['dnsbl', 'spam', 'blacklist', 'blocklist', 'reputation', 'email'],
     presets: [
+      { label: 'google.com', value: 'google.com' },
       { label: '1.1.1.1', value: '1.1.1.1' },
       { label: '8.8.8.8', value: '8.8.8.8' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
     ],
-    cliTemplate: (origin, ip) => `curl -s "${origin}/api/rbl?target=${ip || '1.1.1.1'}"`,
+    cliTemplate: (origin, ip) => `curl -s "${origin}/api/rbl?target=${ip || 'google.com'}"`,
   },
   {
     id: 'spf',
     category: 'dns-security',
-    name: 'SPF Policy Tester',
-    shortName: 'SPF Tester',
-    desc: 'Evaluate RFC 7208 SPF policies in Basic or Advanced mode (sender IP, MAIL FROM, HELO, macros, 10-lookup & custom record).',
+    name: 'Email Auth & SMTP (SPF / DMARC / DKIM)',
+    shortName: 'Email & SMTP',
+    desc: 'Evaluate RFC 7208 SPF policies, inspect DMARC & DKIM DNS records, and probe live SMTP banners / EHLO / STARTTLS.',
     icon: MailCheck,
-    keywords: ['email', 'smtp', 'dmarc', 'txt', 'rfc7208', 'mail'],
+    keywords: ['email', 'smtp', 'ehlo', 'starttls', 'banner', 'spf', 'dmarc', 'dkim', 'txt', 'rfc7208', 'mail'],
     presets: [
-      { label: 'gmail.com', value: 'gmail.com' },
-      { label: 'cloudflare.com', value: 'cloudflare.com' },
-      { label: 'github.com', value: 'github.com' },
-      { label: 'justanother.engineer', value: 'justanother.engineer' },
+      { label: 'google.com', value: 'google.com' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/spf?domain=gmail.com&ip=209.85.220.41"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/spf?domain=google.com&ip=209.85.220.41"`,
   },
   {
-    id: 'geo',
-    category: 'network',
-    name: 'Country by IP',
-    shortName: 'Country / IP',
-    desc: 'Identify country, city, timezone, ISP, ASN, and coordinates for any IP or domain.',
-    icon: Globe,
-    keywords: ['geolocation', 'geoip', 'location', 'map', 'asn', 'isp'],
+    id: 'tls',
+    category: 'dns-security',
+    name: 'SSL / TLS Certificate Inspector',
+    shortName: 'TLS Cert',
+    desc: 'Inspect remote TLS certificates, SANs, expiry countdown, certificate chain, protocol version, and cipher suite.',
+    icon: Lock,
+    keywords: ['ssl', 'tls', 'cert', 'certificate', 'https', 'x509', 'san', 'expiry', 'chain'],
     presets: [
-      { label: '1.1.1.1', value: '1.1.1.1' },
-      { label: '8.8.8.8', value: '8.8.8.8' },
+      { label: 'google.com', value: 'google.com' },
+      { label: 'cloudflare.com', value: 'cloudflare.com' },
       { label: 'github.com', value: 'github.com' },
     ],
-    cliTemplate: (origin) => `curl -s "${origin}/api/geo?target=1.1.1.1"`,
+    cliTemplate: (origin) => `curl -s "${origin}/api/tls?host=google.com&port=443"`,
+  },
+  {
+    id: 'headers',
+    category: 'dns-security',
+    name: 'HTTP Header & Redirect Inspector',
+    shortName: 'HTTP Audit',
+    desc: 'Trace HTTP redirect chains, response timing, and audit security headers (HSTS, CSP, X-Frame-Options, CORS).',
+    icon: ShieldCheck,
+    keywords: ['http', 'headers', 'redirect', 'hsts', 'csp', 'cors', 'security', 'audit', 'ttfb'],
+    presets: [
+      { label: 'https://google.com', value: 'https://google.com' },
+      { label: 'https://cloudflare.com', value: 'https://cloudflare.com' },
+    ],
+    cliTemplate: (origin) => `curl -s "${origin}/api/headers?url=https://google.com"`,
+  },
+  {
+    id: 'jwt',
+    category: 'dns-security',
+    name: 'JWT Decoder & Verifier',
+    shortName: 'JWT Decoder',
+    desc: 'Decode JWT headers and payloads, inspect exp/iat/nbf validity, and verify HS256/HS384/HS512 signatures locally.',
+    icon: KeyRound,
+    keywords: ['jwt', 'token', 'bearer', 'auth', 'oauth', 'hs256', 'decode', 'verify', 'claims'],
+    presets: [],
+    cliTemplate: () => `# Paste a JWT to decode & verify 100% locally in your browser`,
   },
   {
     id: 'bandwidth',
@@ -384,10 +522,10 @@ const TOOLS: ToolMeta[] = [
     id: 'subnet',
     category: 'calculators',
     name: 'Network Calculator',
-    shortName: 'Subnet Calc',
-    desc: 'Calculate IPv4/IPv6 CIDR ranges, subnet masks, wildcards, binary octets, and splits.',
+    shortName: 'Network Calc',
+    desc: 'Calculate IPv4/IPv6 CIDR ranges, subnet masks, wildcards, splits, and convert IPv4 ↔ IPv6 (6to4, NAT64, ISATAP).',
     icon: Calculator,
-    keywords: ['cidr', 'mask', 'netmask', 'ipv4', 'ipv6', 'vlsm'],
+    keywords: ['cidr', 'mask', 'netmask', 'ipv4', 'ipv6', 'vlsm', 'nat64', '6to4', 'isatap', 'mapped'],
     presets: [
       { label: '192.168.1.10/24', value: '192.168.1.10/24' },
       { label: '10.0.42.5/16', value: '10.0.42.5/16' },
@@ -447,46 +585,24 @@ const TOOLS: ToolMeta[] = [
   {
     id: 'jsonsort',
     category: 'dev',
-    name: 'JSON Sort',
-    shortName: 'JSON Sort',
-    desc: 'Recursively sort JSON object keys alphabetically, optionally sort arrays, and format or minify output.',
-    icon: ArrowDownAZ,
-    keywords: ['json', 'format', 'pretty', 'minify', 'jq', 'sort'],
+    name: 'JSON & Data Toolkit',
+    shortName: 'JSON Toolkit',
+    desc: 'Sort & format JSON, explore nested trees with JSONPath copy, and convert between JSON, YAML, TOML, XML, and CSV.',
+    icon: Braces,
+    keywords: ['json', 'format', 'pretty', 'minify', 'jq', 'sort', 'tree', 'browser', 'jsonpath', 'xml', 'yaml', 'toml', 'csv', 'convert'],
     presets: [],
     cliTemplate: (origin) => `curl -s "${origin}/api/me" | jq -S .`,
   },
   {
-    id: 'xml2json',
-    category: 'dev',
-    name: 'XML to JSON',
-    shortName: 'XML → JSON',
-    desc: 'Convert XML documents with attributes, CDATA, and repeated elements into clean JSON.',
-    icon: CodeXml,
-    keywords: ['xml', 'json', 'convert', 'parse', 'transform'],
-    presets: [],
-    cliTemplate: () => `printf '<service port="3000"><name>jae-tools</name></service>'`,
-  },
-  {
     id: 'base64',
     category: 'dev',
-    name: 'Base64 Encode / Decode',
-    shortName: 'Base64',
-    desc: 'UTF-8 safe Base64 and URL-safe Base64 encoding & decoding with byte length metrics.',
+    name: 'Encoder / Decoder',
+    shortName: 'Encoders',
+    desc: 'UTF-8 Base64, URL & query-string inspector, HTML entities, and Hex encoding & decoding.',
     icon: Binary,
-    keywords: ['encode', 'decode', 'b64', 'utf8', 'binary'],
+    keywords: ['encode', 'decode', 'b64', 'base64', 'utf8', 'binary', 'url', 'uri', 'percent', 'querystring', 'html', 'hex'],
     presets: [],
     cliTemplate: () => `printf 'justanother.engineer' | base64`,
-  },
-  {
-    id: 'url',
-    category: 'dev',
-    name: 'URL Encode / Decode',
-    shortName: 'URL Encode',
-    desc: 'Percent-encode or decode URLs and query components, plus inspect query string parameters.',
-    icon: Link2,
-    keywords: ['percent', 'uri', 'querystring', 'encode', 'decode'],
-    presets: [],
-    cliTemplate: () => `python3 -c "import urllib.parse; print(urllib.parse.quote('hello world & tools'))"`,
   },
   {
     id: 'cron',
@@ -532,20 +648,54 @@ const TOOLS: ToolMeta[] = [
     cliTemplate: () => `figlet "LUI.Z"`,
   },
   {
-    id: 'ipv4to6',
+    id: 'diff',
+    category: 'dev',
+    name: 'Text & JSON Diff Checker',
+    shortName: 'Diff Checker',
+    desc: 'Compare two text or JSON documents line-by-line with optional JSON key sorting and whitespace normalization.',
+    icon: ArrowLeftRight,
+    keywords: ['diff', 'compare', 'patch', 'json', 'text', 'delta', 'changes'],
+    presets: [],
+    cliTemplate: () => `diff -u fileA.json fileB.json`,
+  },
+  {
+    id: 'uuid',
+    category: 'dev',
+    name: 'UUID / ULID / NanoID Generator',
+    shortName: 'ID Generator',
+    desc: 'Bulk-generate CSPRNG UUIDv4, time-ordered UUIDv7, ULID, and NanoID values, plus decode UUIDv7/ULID timestamps.',
+    icon: Fingerprint,
+    keywords: ['uuid', 'uuidv4', 'uuidv7', 'ulid', 'nanoid', 'guid', 'id', 'identifier', 'timestamp'],
+    presets: [],
+    cliTemplate: (origin) => `curl -s "${origin}/api/id?type=uuidv7&count=5"`,
+  },
+  {
+    id: 'chmod',
     category: 'calculators',
-    name: 'IPv4 to IPv6 Converter',
-    shortName: 'IPv4 → IPv6',
-    desc: 'Convert IPv4 to ::ffff: IPv4-mapped, 6to4 (2002::/16), NAT64 (64:ff9b::/96), ISATAP, & reverse IPv6 back to IPv4.',
-    icon: EthernetPort,
-    keywords: ['ipv4', 'ipv6', 'nat64', '6to4', 'isatap', 'mapped'],
+    name: 'Chmod / Unix Permissions',
+    shortName: 'Chmod Calc',
+    desc: 'Interactive rwx + setuid/setgid/sticky permissions matrix synced with octal, symbolic, chmod command, and umask.',
+    icon: Terminal,
+    keywords: ['chmod', 'unix', 'linux', 'permissions', 'octal', 'rwx', 'umask', 'sticky', 'setuid'],
     presets: [
-      { label: '192.0.2.1', value: '192.0.2.1' },
-      { label: '1.1.1.1', value: '1.1.1.1' },
-      { label: '::ffff:8.8.8.8', value: '::ffff:8.8.8.8' },
-      { label: '2002:c000:201::', value: '2002:c000:201::' },
+      { label: '755', value: '755' },
+      { label: '644', value: '644' },
+      { label: '600', value: '600' },
+      { label: '777', value: '777' },
+      { label: '4755', value: '4755' },
     ],
-    cliTemplate: () => `printf "::ffff:%02x%02x:%02x%02x\\n" 192 0 2 1`,
+    cliTemplate: () => `chmod 755 script.sh`,
+  },
+  {
+    id: 'markdown',
+    category: 'dev',
+    name: 'Markdown Preview & Table Builder',
+    shortName: 'Markdown',
+    desc: 'Live GitHub-Flavored Markdown preview with safe HTML export plus an interactive GFM table builder.',
+    icon: FileText,
+    keywords: ['markdown', 'md', 'gfm', 'preview', 'table', 'html', 'docs', 'readme'],
+    presets: [],
+    cliTemplate: () => `# GitHub-Flavored Markdown preview & table builder`,
   },
   {
     id: 'units',
@@ -586,10 +736,88 @@ const TOOLS: ToolMeta[] = [
     ],
     cliTemplate: (origin) => `curl -s "${origin}/api/irishtax?salary=72000&filing=single"`,
   },
+  {
+    id: 'soil',
+    category: 'calculators',
+    name: 'Soil Calculator',
+    shortName: 'Soil Calc',
+    desc: 'Calculate topsoil, compost, or mulch volume (m³, litres, tonnes) and 20L/40L/50L/bulk bags for raised beds & gardens.',
+    icon: Sprout,
+    keywords: ['soil', 'compost', 'mulch', 'topsoil', 'garden', 'raised bed', 'litres', 'tonnes', 'bags', 'quickcrop'],
+    presets: [],
+    cliTemplate: () => `# Volume (L) = Length(m) × Width(m) × Depth(m) × 1000`,
+  },
+  {
+    id: 'paint',
+    category: 'calculators',
+    name: 'Paint Calculator',
+    shortName: 'Paint Calc',
+    desc: 'Calculate litres, coats, optimal 1L/2.5L/5L/10L tin combinations, and cost for rooms, ceilings, and walls with door/window deductions.',
+    icon: Palette,
+    keywords: ['paint', 'litres', 'coats', 'wall', 'room', 'ceiling', 'dulux', 'emulsion', 'diy', 'tins', 'coverage'],
+    presets: [],
+    cliTemplate: () => `# Litres = (Paintable Area m² × Coats) / Coverage (m²/L) × (1 + Buffer%)`,
+  },
+  {
+    id: 'password',
+    category: 'dns-security',
+    name: 'Password Generator',
+    shortName: 'Password Gen',
+    desc: 'Generate cryptographically secure Random passwords, Memorable passphrases, and numeric PINs with entropy metrics.',
+    icon: KeyRound,
+    keywords: ['password', 'passphrase', 'pin', 'generator', '1password', 'random', 'memorable', 'secret', 'key', 'entropy'],
+    presets: [],
+    cliTemplate: (origin) => `curl -s "${origin}/api/password?type=random&length=20&numbers=true&symbols=false"`,
+  },
+  {
+    id: 'hash',
+    category: 'dns-security',
+    name: 'Hash Generator',
+    shortName: 'Hash Gen',
+    desc: 'Compute MD5, SHA-1, SHA-256, SHA-384, SHA-512, HMAC, and bcrypt hashes for text and local files, with instant verification.',
+    icon: Hash,
+    keywords: ['hash', 'md5', 'sha1', 'sha256', 'sha384', 'sha512', 'bcrypt', 'hmac', 'checksum', 'digest', 'verify', 'crypto', 'kdf'],
+    presets: [
+      { label: 'hello world', value: 'hello world' },
+      { label: 'lui.z', value: 'lui.z' },
+      { label: 'JSON', value: '{"ok":true,"service":"tools"}' },
+    ],
+    cliTemplate: (origin) => `curl -s "${origin}/api/hash?text=hello%20world&format=hex"`,
+  },
+  {
+    id: 'color',
+    category: 'dev',
+    name: 'RGB / HEX Colour Picker',
+    shortName: 'RGB / HEX',
+    desc: 'Interactive live colour picker with 2D spectrum, Hue/Alpha sliders, HEX, RGB, HSL, CSS snippets, WCAG contrast, and harmonies.',
+    icon: Palette,
+    keywords: ['color', 'colour', 'picker', 'hex', 'rgb', 'rgba', 'hsl', 'css', 'palette', 'swatch', 'contrast', 'wcag', 'eyedropper'],
+    presets: [
+      { label: '#00FFFF', value: '#00FFFF' },
+      { label: '#F3EB2C', value: '#F3EB2C' },
+      { label: '#FF3B5C', value: '#FF3B5C' },
+      { label: '#3B82F6', value: '#3B82F6' },
+      { label: '#10B981', value: '#10B981' },
+    ],
+    cliTemplate: () => `/* CSS */ :root { --color-primary: #00ffff; }`,
+  },
+  {
+    id: 'image',
+    category: 'dev',
+    name: 'Image Crop, Resize & Convert',
+    shortName: 'Image Studio',
+    desc: 'Crop, rotate, flip, resize, compress, and convert images to WebP, JPEG, or PNG 100% locally in your browser.',
+    icon: Crop,
+    keywords: ['image', 'crop', 'resize', 'compress', 'convert', 'png', 'jpeg', 'jpg', 'webp', 'photo', 'rotate', 'aspect'],
+    presets: [],
+    cliTemplate: () => `# Runs 100% locally via HTML5 Canvas — images never leave your browser`,
+  },
 ];
 
 let activeTool: ToolId = 'myip';
 let pickerOpen = false;
+let pickerQuery = '';
+let pickerHighlightIdx = 0;
 let visitorIp = '';
 let activeAbort: AbortController | null = null;
 let activeSpeedCleanup: (() => void) | null = null;
@@ -1114,37 +1342,87 @@ function mountMyIp(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
 function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   controlsEl.innerHTML = `
-    <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-      <div class="md:col-span-5">
-        <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Host or IP Address</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. cloudflare.com or 1.1.1.1" value="cloudflare.com" required />
+    <form id="tool-form" class="flex flex-col gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+        <div class="md:col-span-5">
+          <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Host or IP Address</label>
+          <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. google.com or 1.1.1.1" value="google.com" required />
+        </div>
+        <div class="md:col-span-2">
+          <label for="ping-port" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">TCP Port</label>
+          <input id="ping-port" type="number" min="1" max="65535" step="1" value="443" class="cyber-input" required />
+        </div>
+        <div class="md:col-span-2">
+          <label for="ping-count" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Probes</label>
+          <select id="ping-count" class="cyber-select w-full">
+            <option value="10" selected>10 probes</option>
+            <option value="continuous">Continuous</option>
+          </select>
+        </div>
+        <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
+          ${ctaButton('TCP PING')}
+          ${stopButton()}
+        </div>
       </div>
-      <div class="md:col-span-2">
-        <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Mode</label>
-        <select id="ping-mode" class="cyber-select w-full">
-          <option value="auto" selected>Auto (ICMP→TCP)</option>
-          <option value="tcp">TCP Connect</option>
-          <option value="icmp">ICMP Only</option>
-        </select>
-      </div>
-      <div class="md:col-span-2">
-        <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Count</label>
-        <select id="ping-count" class="cyber-select w-full">
-          <option value="4" selected>4 probes</option>
-          <option value="6">6 probes</option>
-          <option value="10">10 probes</option>
-        </select>
-      </div>
-      <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
-        ${ctaButton('PING HOST')}
-        ${stopButton()}
+
+      <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+        <span class="text-[#858585] text-[10px] uppercase tracking-wider mr-1">PORT:</span>
+        ${(
+          [
+            [443, '443 HTTPS'],
+            [80, '80 HTTP'],
+            [22, '22 SSH'],
+            [53, '53 DNS'],
+            [3306, '3306 MySQL'],
+            [5432, '5432 Postgres'],
+          ] as const
+        )
+          .map(
+            ([p, label]) =>
+              `<button type="button" data-tcp-port="${p}" class="px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#00ffff]/60 hover:text-[#00ffff] transition-colors cursor-pointer">${label}</button>`,
+          )
+          .join('')}
       </div>
     </form>
   `;
 
   const form = controlsEl.querySelector<HTMLFormElement>('#tool-form')!;
+  const hostInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
+  const portInput = controlsEl.querySelector<HTMLInputElement>('#ping-port')!;
+  const countSelect = controlsEl.querySelector<HTMLSelectElement>('#ping-count')!;
   const submitBtn = controlsEl.querySelector<HTMLButtonElement>('#tool-submit-btn')!;
   const stopBtn = controlsEl.querySelector<HTMLButtonElement>('#tool-stop-btn')!;
+  const portButtons = controlsEl.querySelectorAll<HTMLButtonElement>('[data-tcp-port]');
+
+  const syncPortUi = () => {
+    const p = Math.min(65535, Math.max(1, Number(portInput.value) || 443));
+    portButtons.forEach((btn) => {
+      const isSelected = Number(btn.dataset.tcpPort) === p;
+      btn.classList.toggle('border-[#00ffff]/65', isSelected);
+      btn.classList.toggle('bg-[#00ffff]/12', isSelected);
+      btn.classList.toggle('text-[#00ffff]', isSelected);
+      btn.classList.toggle('border-white/15', !isSelected);
+      btn.classList.toggle('bg-[#050505]', !isSelected);
+      btn.classList.toggle('text-[#bbb]', !isSelected);
+    });
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      const h = hostInput.value.trim() || 'google.com';
+      const cnt = countSelect.value === 'continuous' ? 10 : Number(countSelect.value);
+      snippetEl.textContent = `curl -s "${window.location.origin}/api/ping?host=${encodeURIComponent(h)}&mode=tcp&port=${p}&count=${cnt}"`;
+    }
+  };
+
+  portButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      portInput.value = btn.dataset.tcpPort ?? '443';
+      syncPortUi();
+    });
+  });
+  portInput.addEventListener('input', syncPortUi);
+  hostInput.addEventListener('input', syncPortUi);
+  countSelect.addEventListener('change', syncPortUi);
+  syncPortUi();
 
   stopBtn.addEventListener('click', () => {
     activeAbort?.abort();
@@ -1152,9 +1430,11 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const host = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!.value.trim();
-    const mode = controlsEl.querySelector<HTMLSelectElement>('#ping-mode')!.value;
-    const totalCount = Number(controlsEl.querySelector<HTMLSelectElement>('#ping-count')!.value);
+    const host = hostInput.value.trim();
+    const targetPort = Math.min(65535, Math.max(1, Math.trunc(Number(portInput.value) || 443)));
+    portInput.value = String(targetPort);
+    const isContinuous = countSelect.value === 'continuous';
+    const totalCount = isContinuous ? Number.POSITIVE_INFINITY : Number(countSelect.value) || 10;
     if (!host) return;
 
     activeAbort?.abort();
@@ -1167,19 +1447,20 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     const samples: PingSample[] = [];
     const rawLines: string[] = [];
     let resolvedIp = '--';
-    let methodLabel = mode.toUpperCase();
-    let method: 'icmp' | 'tcp' = 'icmp';
-    let port: number | null = null;
+    let methodLabel = `TCP:${targetPort}`;
+    let method: 'icmp' | 'tcp' = 'tcp';
+    let port: number | null = targetPort;
     let family = 'unknown';
 
     const renderLive = (inProgress: boolean, stopped = false) => {
       const stats = computeClientPingStats(samples);
-      const maxBar = Math.max(...samples.map((s) => s.rttMs ?? 0), 1);
+      const visibleSamples = samples.slice(-40);
+      const maxBar = Math.max(...visibleSamples.map((s) => s.rttMs ?? 0), 1);
 
-      const summaryLines = [...rawLines];
+      const summaryLines = [...rawLines.slice(-100)];
       if (!inProgress && samples.length > 0) {
         summaryLines.push(
-          `--- ${host} ${method}-ping statistics ---`,
+          `--- ${host}:${port ?? targetPort} tcp-ping statistics ---`,
           `${stats.transmitted} probes transmitted, ${stats.received} received, ${stats.lossPercent}% loss${stopped ? ' (stopped)' : ''}`,
         );
         if (stats.minMs !== null && stats.avgMs !== null && stats.maxMs !== null) {
@@ -1201,10 +1482,14 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           }
         : undefined;
 
+      const countHeading = isContinuous
+        ? `PROBE TIMELINE (${samples.length} sent · continuous)`
+        : `PROBE TIMELINE (${samples.length}/${totalCount})`;
+
       outputEl.innerHTML = `
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           ${statCard('RESOLVED IP', resolvedIp, 'cyan')}
-          ${statCard('METHOD', methodLabel, 'yellow')}
+          ${statCard('TARGET PORT', methodLabel, 'yellow')}
           ${statCard('AVG RTT', stats.avgMs !== null ? `${stats.avgMs} ms` : '--', 'white')}
           ${statCard('MIN / MAX', stats.minMs !== null ? `${stats.minMs} / ${stats.maxMs} ms` : '--', 'white')}
           ${statCard('JITTER', stats.jitterMs !== null ? `${stats.jitterMs} ms` : '--', 'cyan')}
@@ -1213,14 +1498,14 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
         <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-2.5">
           <div class="flex items-center justify-between font-fira text-[10px] uppercase tracking-[0.2em] text-[#858585]">
-            <span>PROBE TIMELINE (${samples.length}/${totalCount})</span>
+            <span>${countHeading}</span>
             ${
               inProgress
                 ? `<span class="flex items-center gap-2 text-[#00ffff]"><span class="inline-block w-2 h-2 rounded-full bg-[#00ffff] animate-ping"></span>PROBING #${samples.length + 1}...</span>`
                 : `<span class="${stopped ? 'text-[#f3eb2c]' : 'text-emerald-400'}">${stopped ? 'STOPPED' : 'COMPLETE'}</span>`
             }
           </div>
-          ${samples
+          ${visibleSamples
             .map((s) => {
               const pct = s.rttMs !== null ? Math.max(4, Math.round((s.rttMs / maxBar) * 100)) : 0;
               return `
@@ -1238,7 +1523,7 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
             .join('')}
         </div>
 
-        ${rawOutputBlock('LIVE TERMINAL OUTPUT', summaryLines.join('\n') || `PING ${host}...`, jsonSummary)}
+        ${rawOutputBlock('LIVE TERMINAL OUTPUT', summaryLines.join('\n') || `TCP PING ${host}:${targetPort}...`, jsonSummary)}
       `;
 
       if (!inProgress) {
@@ -1252,20 +1537,18 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     try {
       for (let seq = 1; seq <= totalCount; seq++) {
         const data = await apiGet<PingResult>(
-          `/api/ping?host=${encodeURIComponent(host)}&count=1&mode=${encodeURIComponent(mode)}&seq=${seq}`,
+          `/api/ping?host=${encodeURIComponent(host)}&count=1&mode=tcp&port=${targetPort}&seq=${seq}`,
           controller.signal,
         );
 
         if (seq === 1) {
           resolvedIp = data.resolvedIp;
           method = data.method;
-          port = data.port;
+          port = data.port ?? targetPort;
           family = data.family;
-          methodLabel = data.method === 'tcp' ? `TCP:${data.port}` : 'ICMP';
+          methodLabel = `TCP:${port}`;
           rawLines.push(
-            data.method === 'tcp'
-              ? `TCP PING ${data.target} (${data.resolvedIp}) port ${data.port} — ${totalCount} probes`
-              : `PING ${data.target} (${data.resolvedIp}) — ${totalCount} probes`,
+            `TCP PING ${data.target} (${data.resolvedIp}) port ${port} — ${isContinuous ? 'continuous' : `${totalCount} probes`}`,
           );
         }
 
@@ -1274,14 +1557,15 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           samples.push(sample);
           rawLines.push(
             sample.status === 'reply' && sample.rttMs !== null
-              ? `seq=${sample.seq} from ${resolvedIp}${port ? `:${port}` : ''} time=${sample.rttMs.toFixed(2)} ms${sample.ttl ? ` ttl=${sample.ttl}` : ''}`
-              : `seq=${sample.seq} ${resolvedIp} timeout (${sample.detail})`,
+              ? `seq=${sample.seq} from ${resolvedIp}:${port ?? targetPort} time=${sample.rttMs.toFixed(2)} ms`
+              : `seq=${sample.seq} ${resolvedIp}:${port ?? targetPort} timeout (${sample.detail})`,
           );
         }
 
-        renderLive(seq < totalCount);
-        if (seq < totalCount) {
-          await sleepMs(160, controller.signal);
+        const hasMore = seq < totalCount;
+        renderLive(hasMore);
+        if (hasMore) {
+          await sleepMs(isContinuous ? 450 : 160, controller.signal);
         }
       }
     } catch (err) {
@@ -1307,9 +1591,13 @@ function mountPing(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   controlsEl.innerHTML = `
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-      <div class="md:col-span-7">
+      <div class="md:col-span-5">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Destination Host or IP</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or cloudflare.com" value="1.1.1.1" required />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or google.com" value="google.com" required />
+      </div>
+      <div class="md:col-span-2">
+        <label for="trace-port" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">TCP Port</label>
+        <input id="trace-port" type="number" min="1" max="65535" step="1" value="443" class="cyber-input" required />
       </div>
       <div class="md:col-span-2">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Max Hops</label>
@@ -1320,15 +1608,28 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         </select>
       </div>
       <div class="md:col-span-3 flex items-center justify-center md:justify-end gap-2">
-        ${ctaButton('TRACE ROUTE')}
+        ${ctaButton('TCP TRACE')}
         ${stopButton()}
       </div>
     </form>
   `;
 
   const form = controlsEl.querySelector<HTMLFormElement>('#tool-form')!;
+  const hostInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
+  const portInput = controlsEl.querySelector<HTMLInputElement>('#trace-port')!;
   const submitBtn = controlsEl.querySelector<HTMLButtonElement>('#tool-submit-btn')!;
   const stopBtn = controlsEl.querySelector<HTMLButtonElement>('#tool-stop-btn')!;
+
+  const syncTraceCli = () => {
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      const h = hostInput.value.trim() || 'google.com';
+      const p = Math.min(65535, Math.max(1, Math.trunc(Number(portInput.value) || 443)));
+      snippetEl.textContent = `curl -s "${window.location.origin}/api/traceroute?host=${encodeURIComponent(h)}&port=${p}"`;
+    }
+  };
+  hostInput.addEventListener('input', syncTraceCli);
+  portInput.addEventListener('input', syncTraceCli);
 
   stopBtn.addEventListener('click', () => {
     activeAbort?.abort();
@@ -1336,7 +1637,9 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const host = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!.value.trim();
+    const host = hostInput.value.trim();
+    const tcpPort = Math.min(65535, Math.max(1, Math.trunc(Number(portInput.value) || 443)));
+    portInput.value = String(tcpPort);
     const maxHops = Number(controlsEl.querySelector<HTMLSelectElement>('#trace-hops')!.value);
     if (!host) return;
 
@@ -1352,7 +1655,7 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     const rawLines: string[] = [];
     let resolvedIp = '--';
     let family = 'unknown';
-    let method: 'traceroute' | 'fallback' = 'traceroute';
+    let method: 'tcp-traceroute' | 'fallback' = 'tcp-traceroute';
     let completed = false;
     let note: string | null = null;
     let currentHop = 1;
@@ -1450,7 +1753,7 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         renderLive(true);
 
         const data = await apiGet<SingleTracerouteHopResult>(
-          `/api/traceroute?host=${encodeURIComponent(host)}&hop=${hopNum}`,
+          `/api/traceroute?host=${encodeURIComponent(host)}&hop=${hopNum}&port=${tcpPort}`,
           controller.signal,
         );
 
@@ -1459,7 +1762,7 @@ function mountTraceroute(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           family = data.family;
           method = data.method;
           note = data.note;
-          rawLines.push(`traceroute to ${data.target} (${data.resolvedIp}), ${maxHops} hops max`);
+          rawLines.push(`tcp traceroute to ${data.target} (${data.resolvedIp}) port ${data.port}, ${maxHops} hops max`);
           if (data.note) {
             rawLines.push(`[runtime notice] ${data.note}`);
           }
@@ -1507,7 +1810,7 @@ function mountDns(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-6">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Domain Name</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. justanother.engineer" value="cloudflare.com" required />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. google.com" value="google.com" required />
       </div>
       <div class="md:col-span-3">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Record Type</label>
@@ -1606,7 +1909,7 @@ function mountWhois(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-9">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Domain Name or IP Address</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. cloudflare.com or 1.1.1.1" value="cloudflare.com" required />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. google.com or 1.1.1.1" value="google.com" required />
       </div>
       <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('WHOIS QUERY')}
@@ -1674,85 +1977,240 @@ function mountPort(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
         <div class="md:col-span-5">
           <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Host or IP Address</label>
-          <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. cloudflare.com or 1.1.1.1" value="cloudflare.com" required />
+          <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. google.com or 1.1.1.1" value="google.com" required />
         </div>
         <div class="md:col-span-4">
-          <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">TCP Port(s) (comma-separated, max 16)</label>
-          <input id="port-list" type="text" class="cyber-input" placeholder="80, 443, 22" value="80, 443, 22, 53" required />
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <label for="port-list" class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">TCP Ports / Ranges (max ${MAX_PORTS_PER_SCAN})</label>
+            <span id="port-count-badge" class="font-fira text-[10px] text-[#00ffff]">4 / ${MAX_PORTS_PER_SCAN}</span>
+          </div>
+          <input id="port-list" type="text" class="cyber-input" placeholder="e.g. 1,2,5-20 or 80, 443" value="80, 443, 22, 53" required />
         </div>
         <div class="md:col-span-3 flex justify-center md:justify-end">
           ${ctaButton('CHECK PORTS')}
         </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2 font-fira text-[11px]">
-        <span class="text-[#858585] uppercase tracking-wider">PRESETS:</span>
-        <button type="button" data-port-preset="80,443,8080,8443" class="px-2.5 py-1 rounded border border-white/15 bg-[#050505] text-[#00ffff] hover:border-[#00ffff]/60 cursor-pointer">Web (80,443,8080,8443)</button>
-        <button type="button" data-port-preset="25,110,143,465,587,993,995" class="px-2.5 py-1 rounded border border-white/15 bg-[#050505] text-[#00ffff] hover:border-[#00ffff]/60 cursor-pointer">Mail</button>
-        <button type="button" data-port-preset="21,22,25,53,80,110,143,443,3306,5432,6379,8080" class="px-2.5 py-1 rounded border border-white/15 bg-[#050505] text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer">Top 12 Common</button>
+
+      <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+        <span class="text-[#858585] text-[10px] uppercase tracking-wider mr-1">COMMON SETS:</span>
+        ${PORT_PRESET_SETS.map(
+          (set) => `
+            <button
+              type="button"
+              data-port-set="${set.id}"
+              title="${escapeHtml(set.expr)}"
+              class="port-set-btn inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#00ffff]/55 hover:text-white transition-colors cursor-pointer"
+            >
+              <span>${escapeHtml(set.label)}</span>
+              <span class="text-[10px] text-[#777]">${set.ports.length}</span>
+            </button>
+          `,
+        ).join('')}
+        <button
+          type="button"
+          id="port-clear-btn"
+          class="px-2.5 py-1 rounded-md border border-rose-500/30 bg-rose-950/15 text-rose-300 hover:border-rose-400/60 transition-colors cursor-pointer"
+        >
+          CLEAR
+        </button>
       </div>
     </form>
   `;
 
-  controlsEl.querySelectorAll<HTMLButtonElement>('[data-port-preset]').forEach((btn) => {
+  const hostInput = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!;
+  const portInput = controlsEl.querySelector<HTMLInputElement>('#port-list')!;
+  const countBadge = controlsEl.querySelector<HTMLElement>('#port-count-badge')!;
+  const setButtons = controlsEl.querySelectorAll<HTMLButtonElement>('[data-port-set]');
+
+  const syncPortState = () => {
+    const raw = portInput.value.trim();
+    const parsed = raw ? parsePortExpression(raw) : { ports: [] };
+    const currentSet = new Set(parsed.ports);
+
+    if (!raw) {
+      countBadge.textContent = `0 / ${MAX_PORTS_PER_SCAN}`;
+      countBadge.className = 'font-fira text-[10px] text-[#777]';
+    } else if (parsed.error) {
+      countBadge.textContent = 'Invalid / >64';
+      countBadge.title = parsed.error;
+      countBadge.className = 'font-fira text-[10px] text-rose-400';
+    } else {
+      countBadge.textContent = `${parsed.ports.length} / ${MAX_PORTS_PER_SCAN}`;
+      countBadge.title = '';
+      countBadge.className = 'font-fira text-[10px] text-[#00ffff]';
+    }
+
+    setButtons.forEach((btn) => {
+      const preset = PORT_PRESET_SETS.find((s) => s.id === btn.dataset.portSet);
+      if (!preset) return;
+      const allIncluded = preset.ports.every((p) => currentSet.has(p));
+      btn.classList.toggle('border-[#00ffff]/65', allIncluded);
+      btn.classList.toggle('bg-[#00ffff]/12', allIncluded);
+      btn.classList.toggle('text-[#00ffff]', allIncluded);
+      btn.classList.toggle('border-white/15', !allIncluded);
+      btn.classList.toggle('bg-[#050505]', !allIncluded);
+      btn.classList.toggle('text-[#bbb]', !allIncluded);
+    });
+
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      const h = hostInput.value.trim() || 'google.com';
+      const p = raw || '80,443';
+      snippetEl.textContent = `curl -s "${window.location.origin}/api/port?host=${encodeURIComponent(h)}&ports=${encodeURIComponent(p)}"`;
+    }
+  };
+
+  setButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
-      controlsEl.querySelector<HTMLInputElement>('#port-list')!.value = btn.dataset.portPreset ?? '80,443';
+      const preset = PORT_PRESET_SETS.find((s) => s.id === btn.dataset.portSet);
+      if (!preset) return;
+      const parsed = portInput.value.trim() ? parsePortExpression(portInput.value) : { ports: [] };
+      const current = parsed.error ? new Set<number>() : new Set(parsed.ports);
+      const allIncluded = preset.ports.every((p) => current.has(p));
+
+      if (allIncluded) {
+        preset.ports.forEach((p) => current.delete(p));
+      } else {
+        for (const p of preset.ports) {
+          if (current.size >= MAX_PORTS_PER_SCAN) break;
+          current.add(p);
+        }
+      }
+
+      portInput.value = formatPortExpression(Array.from(current));
+      syncPortState();
     });
   });
+
+  controlsEl.querySelector<HTMLButtonElement>('#port-clear-btn')?.addEventListener('click', () => {
+    portInput.value = '';
+    syncPortState();
+    portInput.focus();
+  });
+
+  portInput.addEventListener('input', syncPortState);
+  hostInput.addEventListener('input', syncPortState);
+  syncPortState();
+
+  let lastResult: PortCheckResult | null = null;
+  let statusFilter: 'all' | 'open' | 'closed' | 'filtered' = 'all';
+
+  const renderPortResults = () => {
+    if (!lastResult) return;
+    const data = lastResult;
+    const openCount = data.results.filter((r) => r.status === 'open').length;
+    const closedCount = data.results.filter((r) => r.status === 'closed').length;
+    const filteredCount = data.results.filter((r) => r.status === 'filtered').length;
+    const visible =
+      statusFilter === 'all' ? data.results : data.results.filter((r) => r.status === statusFilter);
+
+    outputEl.innerHTML = `
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        ${statCard('RESOLVED IP', data.resolvedIp, 'cyan')}
+        ${statCard('PORTS TESTED', String(data.results.length), 'white')}
+        ${statCard('OPEN PORTS', String(openCount), openCount > 0 ? 'green' : 'yellow')}
+        ${statCard('SCAN TIME', `${data.durationMs} ms`, 'white')}
+      </div>
+
+      ${
+        data.results.length > 4
+          ? `
+            <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+              ${(
+                [
+                  ['all', `ALL (${data.results.length})`],
+                  ['open', `OPEN (${openCount})`],
+                  ['closed', `CLOSED (${closedCount})`],
+                  ['filtered', `FILTERED (${filteredCount})`],
+                ] as const
+              )
+                .map(
+                  ([key, label]) => `
+                    <button
+                      type="button"
+                      data-port-filter="${key}"
+                      class="px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+                        statusFilter === key
+                          ? 'border-[#00ffff]/60 bg-[#00ffff]/12 text-[#00ffff]'
+                          : 'border-white/10 bg-[#050505] text-[#888] hover:text-white'
+                      }"
+                    >${label}</button>
+                  `,
+                )
+                .join('')}
+            </div>
+          `
+          : ''
+      }
+
+      ${
+        visible.length === 0
+          ? `<div class="rounded-xl border border-white/10 bg-[#050505] p-5 text-center font-fira text-xs text-[#777]">No ports with status "${statusFilter}".</div>`
+          : `
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              ${visible
+                .map((r) => {
+                  const badge =
+                    r.status === 'open'
+                      ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-300'
+                      : r.status === 'closed'
+                        ? 'bg-[#f3eb2c]/15 border-[#f3eb2c]/40 text-[#f3eb2c]'
+                        : 'bg-rose-500/15 border-rose-400/50 text-rose-300';
+                  return `
+                    <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <span class="font-fira text-base font-bold text-white">:${r.port}</span>
+                          <span class="font-fira text-[11px] text-[#858585]">${escapeHtml(r.service)}</span>
+                        </div>
+                        <p class="font-fira text-[11px] text-[#858585] mt-1">${escapeHtml(r.detail)}</p>
+                      </div>
+                      <div class="text-right shrink-0">
+                        <span class="inline-block px-2 py-0.5 rounded border font-fira text-[10px] font-bold uppercase ${badge}">${r.status}</span>
+                        <div class="font-fira text-[11px] text-[#00ffff] mt-1">${r.latencyMs !== null ? `${r.latencyMs} ms` : '--'}</div>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+          `
+      }
+    `;
+
+    outputEl.querySelectorAll<HTMLButtonElement>('[data-port-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        statusFilter = (btn.dataset.portFilter as typeof statusFilter) ?? 'all';
+        renderPortResults();
+      });
+    });
+  };
 
   const form = controlsEl.querySelector<HTMLFormElement>('#tool-form')!;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const host = controlsEl.querySelector<HTMLInputElement>('#tool-primary-input')!.value.trim();
-    const ports = controlsEl.querySelector<HTMLInputElement>('#port-list')!.value.trim();
+    const host = hostInput.value.trim();
+    const ports = portInput.value.trim();
     if (!host || !ports) return;
+
+    const parsed = parsePortExpression(ports);
+    if (parsed.error) {
+      showError(outputEl, parsed.error);
+      return;
+    }
 
     activeAbort?.abort();
     activeAbort = new AbortController();
-    showLoading(outputEl, `Probing TCP ports [${ports}] on ${host}...`);
+    showLoading(outputEl, `Probing ${parsed.ports.length} TCP port(s) [${ports}] on ${host}...`);
 
     try {
       const data = await apiGet<PortCheckResult>(
         `/api/port?host=${encodeURIComponent(host)}&ports=${encodeURIComponent(ports)}`,
         activeAbort.signal,
       );
-      const openCount = data.results.filter((r) => r.status === 'open').length;
-
-      outputEl.innerHTML = `
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          ${statCard('RESOLVED IP', data.resolvedIp, 'cyan')}
-          ${statCard('PORTS TESTED', String(data.results.length), 'white')}
-          ${statCard('OPEN PORTS', String(openCount), openCount > 0 ? 'green' : 'yellow')}
-          ${statCard('SCAN TIME', `${data.durationMs} ms`, 'white')}
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          ${data.results
-            .map((r) => {
-              const badge =
-                r.status === 'open'
-                  ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-300'
-                  : r.status === 'closed'
-                    ? 'bg-[#f3eb2c]/15 border-[#f3eb2c]/40 text-[#f3eb2c]'
-                    : 'bg-rose-500/15 border-rose-400/40 text-rose-300';
-              return `
-                <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex items-center justify-between gap-3">
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <span class="font-fira text-base font-bold text-white">:${r.port}</span>
-                      <span class="font-fira text-[11px] text-[#858585]">${escapeHtml(r.service)}</span>
-                    </div>
-                    <p class="font-fira text-[11px] text-[#858585] mt-1">${escapeHtml(r.detail)}</p>
-                  </div>
-                  <div class="text-right shrink-0">
-                    <span class="inline-block px-2 py-0.5 rounded border font-fira text-[10px] font-bold uppercase ${badge}">${r.status}</span>
-                    <div class="font-fira text-[11px] text-[#00ffff] mt-1">${r.latencyMs !== null ? `${r.latencyMs} ms` : '--'}</div>
-                  </div>
-                </div>
-              `;
-            })
-            .join('')}
-        </div>
-      `;
+      lastResult = data;
+      statusFilter = 'all';
+      renderPortResults();
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         showError(outputEl, (err as Error).message);
@@ -1909,7 +2367,7 @@ function mountGeo(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-9">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IP Address or Domain</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or github.com (blank = your IP)" value="${escapeHtml(visitorIp || '1.1.1.1')}" />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or google.com (blank = your IP)" value="${escapeHtml(visitorIp || 'google.com')}" />
       </div>
       <div class="md:col-span-3 flex justify-center md:justify-end">
         ${ctaButton('LOCATE IP')}
@@ -2522,7 +2980,7 @@ function mountRbl(controlsEl: HTMLElement, outputEl: HTMLElement): void {
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-6">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">IP Address or Domain</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or cloudflare.com" value="1.1.1.1" required />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. 1.1.1.1 or google.com" value="google.com" required />
       </div>
       <div class="md:col-span-3">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Filter Results</label>
@@ -2877,7 +3335,7 @@ function mountPropagation(controlsEl: HTMLElement, outputEl: HTMLElement): void 
     <form id="tool-form" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-4">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Domain Name</label>
-        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. www.google.com" value="www.google.com" required />
+        <input id="tool-primary-input" type="text" class="cyber-input" placeholder="e.g. google.com" value="google.com" required />
       </div>
       <div class="md:col-span-2">
         <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Record Type</label>
@@ -3601,7 +4059,7 @@ function mountEpoch(controlsEl: HTMLElement, outputEl: HTMLElement): void {
               </select>
             </div>
             <div class="sm:col-span-7 flex justify-center sm:justify-end">
-              <button type="submit" class="hero-cta-sm hero-cta-primary cursor-pointer px-4 py-2 rounded-lg font-fira text-xs font-bold tracking-[0.14em] uppercase">HUMAN → EPOCH</button>
+              <button type="submit" class="hero-cta-sm hero-cta-primary cursor-pointer px-4 py-2 rounded-lg font-fira text-xs font-black text-black tracking-[0.14em] uppercase">HUMAN → EPOCH</button>
             </div>
           </div>
           <div class="flex gap-2 items-center pt-1 border-t border-white/5">
@@ -3755,7 +4213,7 @@ function mountJsonSort(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           </select>
           <button id="js-sample-btn" type="button" class="px-3 py-2 rounded-lg border border-white/10 bg-[#050505] font-fira text-xs text-[#aaa] hover:text-[#f3eb2c] transition-colors cursor-pointer">SAMPLE</button>
           <button id="js-clear-btn" type="button" class="px-3 py-2 rounded-lg border border-white/10 bg-[#050505] font-fira text-xs text-[#aaa] hover:text-red-400 transition-colors cursor-pointer">CLEAR</button>
-          <button id="js-sort-btn" type="button" class="hero-cta-sm hero-cta-primary px-4 py-2 rounded-lg font-fira text-xs font-bold tracking-[0.14em] uppercase cursor-pointer">SORT JSON</button>
+          <button id="js-sort-btn" type="button" class="hero-cta-sm hero-cta-primary px-4 py-2 rounded-lg font-fira text-xs font-black text-black tracking-[0.14em] uppercase cursor-pointer">SORT JSON</button>
         </div>
       </div>
 
@@ -3905,7 +4363,7 @@ function mountXmlToJson(controlsEl: HTMLElement, outputEl: HTMLElement): void {
           </select>
           <button id="xml-sample-btn" type="button" class="px-3 py-2 rounded-lg border border-white/10 bg-[#050505] font-fira text-xs text-[#aaa] hover:text-[#f3eb2c] transition-colors cursor-pointer">SAMPLE</button>
           <button id="xml-clear-btn" type="button" class="px-3 py-2 rounded-lg border border-white/10 bg-[#050505] font-fira text-xs text-[#aaa] hover:text-red-400 transition-colors cursor-pointer">CLEAR</button>
-          <button id="xml-convert-btn" type="button" class="hero-cta-sm hero-cta-primary px-4 py-2 rounded-lg font-fira text-xs font-bold tracking-[0.14em] uppercase cursor-pointer">CONVERT TO JSON</button>
+          <button id="xml-convert-btn" type="button" class="hero-cta-sm hero-cta-primary px-4 py-2 rounded-lg font-fira text-xs font-black text-black tracking-[0.14em] uppercase cursor-pointer">CONVERT TO JSON</button>
         </div>
       </div>
 
@@ -4145,7 +4603,7 @@ function mountUrl(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="rounded-xl border border-white/10 bg-[#050505] p-3 flex flex-col gap-2">
           <span class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">INPUT TEXT / URL</span>
-          <textarea id="url-input" rows="7" spellcheck="false" class="w-full rounded-lg border border-white/10 bg-black p-3 font-fira text-xs text-white focus:outline-none focus:border-[#f3eb2c]/60 resize-y">https://tools.justanother.engineer/?host=cloudflare.com&tag=edge test & rbl#propagation</textarea>
+          <textarea id="url-input" rows="7" spellcheck="false" class="w-full rounded-lg border border-white/10 bg-black p-3 font-fira text-xs text-white focus:outline-none focus:border-[#f3eb2c]/60 resize-y">https://google.com/search?q=network tools &amp; port check#results</textarea>
         </div>
         <div class="rounded-xl border border-white/10 bg-[#050505] p-3 flex flex-col gap-2">
           <div class="flex items-center justify-between font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">
@@ -4430,6 +4888,14 @@ const REGEX_PRESETS: ReadonlyArray<{ label: string; pattern: string; flags: stri
 function mountRegex(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   const initial = REGEX_PRESETS[0]!;
   const activeFlags = new Set(initial.flags.split(''));
+  let activePanel: 'matches' | 'tests' | 'codegen' | 'quickref' = 'matches';
+  let codeLang: RegexCodeLanguage = 'javascript';
+  let quickRefQuery = '';
+  let unitTests: RegexUnitTestCase[] = [
+    { id: 't1', input: 'https://justanother.engineer/tools', expect: 'should_match' },
+    { id: 't2', input: 'http://example.org', expect: 'should_match' },
+    { id: 't3', input: 'ftp://not-http.local', expect: 'should_not_match' },
+  ];
 
   controlsEl.innerHTML = `
     <div class="flex flex-col gap-3">
@@ -4491,6 +4957,16 @@ function mountRegex(controlsEl: HTMLElement, outputEl: HTMLElement): void {
 
   const currentFlags = () => Array.from(activeFlags).join('');
 
+  const insertTokenAtCursor = (token: string) => {
+    const start = patternInput.selectionStart ?? patternInput.value.length;
+    const end = patternInput.selectionEnd ?? start;
+    patternInput.value = patternInput.value.slice(0, start) + token + patternInput.value.slice(end);
+    const nextPos = start + token.length;
+    patternInput.focus();
+    patternInput.setSelectionRange(nextPos, nextPos);
+    renderRegex();
+  };
+
   const syncFlags = () => {
     const fStr = currentFlags();
     flagsLabel.textContent = fStr;
@@ -4506,72 +4982,255 @@ function mountRegex(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   const renderRegex = () => {
     syncFlags();
     try {
+      const t0 = performance.now();
       const res = evaluateRegex(patternInput.value, currentFlags(), testInput.value, replaceInput.value);
+      const evalMs = Math.round((performance.now() - t0) * 100) / 100;
       highlightedEl.innerHTML = renderHighlightedRegexText(testInput.value, res.matches);
       replacedEl.textContent = res.replaced;
 
-      const matchRows =
-        res.matches.length > 0
-          ? res.matches
-              .slice(0, 50)
-              .map((m) => {
-                const groupsHtml =
-                  m.groups.length > 0
-                    ? m.groups
-                        .map(
-                          (g) =>
-                            `<span class="inline-block mr-2 mb-1 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[11px]"><span class="text-[#00ffff]">${escapeHtml(g.name ? g.name : `$${g.index}`)}:</span> <span class="text-white">${escapeHtml(g.value ?? 'undefined')}</span></span>`,
-                        )
-                        .join('')
-                    : '<span class="text-[#666]">None</span>';
-                return `
-                  <tr class="hover:bg-white/[0.02]">
-                    <td class="px-4 py-2 text-[#858585]">#${m.matchIndex + 1}</td>
-                    <td class="px-4 py-2 text-[#00ffff] whitespace-nowrap">[${m.start}..${m.end}]</td>
-                    <td class="px-4 py-2 text-[#f3eb2c] font-semibold break-all">${escapeHtml(m.value || '∅')}</td>
-                    <td class="px-4 py-2">${groupsHtml}</td>
-                  </tr>
-                `;
-              })
-              .join('')
-          : `<tr><td colspan="4" class="px-4 py-5 text-center text-[#858585]">No matches found.</td></tr>`;
+      const unitResults = runRegexUnitTests(patternInput.value, currentFlags(), unitTests);
+      const passedCount = unitResults.filter((r) => r.passed).length;
 
-      const tokenRows = res.tokens
-        .slice(0, 60)
-        .map(
-          (t) => `
-          <div class="px-3 py-2 flex items-start justify-between gap-3 border-b border-white/5 last:border-b-0 font-fira text-xs">
-            <span class="px-2 py-0.5 rounded bg-[#f3eb2c]/15 border border-[#f3eb2c]/35 text-[#f3eb2c] font-bold shrink-0">${escapeHtml(t.token)}</span>
-            <span class="text-[#aaa] text-right">${escapeHtml(t.description)}</span>
+      const panelTabs: Array<{ id: typeof activePanel; label: string }> = [
+        { id: 'matches', label: 'Matches & Explain' },
+        { id: 'tests', label: `Unit Tests (${passedCount}/${unitResults.length})` },
+        { id: 'codegen', label: 'Code Generator' },
+        { id: 'quickref', label: 'Quick Reference' },
+      ];
+
+      let bodyHtml = '';
+      if (activePanel === 'matches') {
+        const matchRows =
+          res.matches.length > 0
+            ? res.matches
+                .slice(0, 50)
+                .map((m) => {
+                  const groupsHtml =
+                    m.groups.length > 0
+                      ? m.groups
+                          .map(
+                            (g) =>
+                              `<span class="inline-block mr-2 mb-1 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[11px]"><span class="text-[#00ffff]">${escapeHtml(g.name ? g.name : `$${g.index}`)}:</span> <span class="text-white">${escapeHtml(g.value ?? 'undefined')}</span></span>`,
+                          )
+                          .join('')
+                      : '<span class="text-[#666]">None</span>';
+                  return `
+                    <tr class="hover:bg-white/[0.02]">
+                      <td class="px-4 py-2 text-[#858585]">#${m.matchIndex + 1}</td>
+                      <td class="px-4 py-2 text-[#00ffff] whitespace-nowrap">[${m.start}..${m.end}]</td>
+                      <td class="px-4 py-2 text-[#f3eb2c] font-semibold break-all">${escapeHtml(m.value || '∅')}</td>
+                      <td class="px-4 py-2">${groupsHtml}</td>
+                    </tr>
+                  `;
+                })
+                .join('')
+            : `<tr><td colspan="4" class="px-4 py-5 text-center text-[#858585]">No matches found.</td></tr>`;
+
+        const tokenRows = res.tokens
+          .slice(0, 60)
+          .map(
+            (t) => `
+            <div class="px-3 py-2 flex items-start justify-between gap-3 border-b border-white/5 last:border-b-0 font-fira text-xs">
+              <span class="px-2 py-0.5 rounded bg-[#f3eb2c]/15 border border-[#f3eb2c]/35 text-[#f3eb2c] font-bold shrink-0">${escapeHtml(t.token)}</span>
+              <span class="text-[#aaa] text-right">${escapeHtml(t.description)}</span>
+            </div>
+          `,
+          )
+          .join('');
+
+        bodyHtml = `
+          <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+            <div class="xl:col-span-7 rounded-xl border border-white/10 bg-[#050505] overflow-x-auto">
+              <div class="px-4 py-2.5 border-b border-white/10 font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">MATCH &amp; CAPTURE GROUP INFORMATION</div>
+              <table class="w-full text-left font-fira text-xs">
+                <thead class="border-b border-white/10 text-[10px] uppercase tracking-[0.18em] text-[#858585]">
+                  <tr><th class="px-4 py-2">MATCH</th><th class="px-4 py-2">RANGE</th><th class="px-4 py-2">FULL MATCH</th><th class="px-4 py-2">GROUPS</th></tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">${matchRows}</tbody>
+              </table>
+            </div>
+            <div class="xl:col-span-5 rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+              <div class="px-4 py-2.5 border-b border-white/10 font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">PATTERN EXPLANATION</div>
+              <div class="max-h-[340px] overflow-y-auto">${tokenRows}</div>
+            </div>
           </div>
-        `,
-        )
-        .join('');
+        `;
+      } else if (activePanel === 'tests') {
+        bodyHtml = `
+          <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">Assertion Suite (${passedCount}/${unitResults.length} passing)</span>
+              <button id="rx-add-test" type="button" class="rounded-lg border border-[#00ffff]/45 bg-[#00ffff]/10 px-3 py-1 font-fira text-[11px] text-[#00ffff] cursor-pointer">+ Add Test Case</button>
+            </div>
+            <div class="flex flex-col gap-2">
+              ${unitResults
+                .map(
+                  (r, idx) => `
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 rounded-lg border ${r.passed ? 'border-emerald-500/30 bg-emerald-950/10' : 'border-rose-500/35 bg-rose-950/15'} p-2.5">
+                      <span class="rounded px-2 py-1 font-fira text-[10px] font-bold uppercase text-center shrink-0 ${r.passed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}">${r.passed ? 'PASS' : 'FAIL'}</span>
+                      <select data-rx-ut-expect="${idx}" class="cyber-select !py-1.5 !pl-2.5 !pr-7 !text-xs shrink-0">
+                        <option value="should_match" ${r.expect === 'should_match' ? 'selected' : ''}>Should match</option>
+                        <option value="should_not_match" ${r.expect === 'should_not_match' ? 'selected' : ''}>Should NOT match</option>
+                      </select>
+                      <input data-rx-ut-input="${idx}" type="text" value="${escapeHtml(r.input)}" placeholder="Test input..." class="cyber-input !py-1.5 !text-xs flex-1" />
+                      <button type="button" data-rx-ut-del="${idx}" class="rounded border border-white/10 bg-black px-2.5 py-1.5 font-fira text-[10px] text-[#888] hover:text-rose-400 cursor-pointer shrink-0">Remove</button>
+                    </div>
+                  `,
+                )
+                .join('')}
+            </div>
+          </div>
+        `;
+      } else if (activePanel === 'codegen') {
+        const langs: Array<{ id: RegexCodeLanguage; label: string }> = [
+          { id: 'javascript', label: 'JS / TS' },
+          { id: 'python', label: 'Python' },
+          { id: 'go', label: 'Go' },
+          { id: 'rust', label: 'Rust' },
+          { id: 'ripgrep', label: 'ripgrep' },
+        ];
+        const snippet = generateRegexCode(codeLang, patternInput.value, currentFlags(), replaceInput.value);
+        bodyHtml = `
+          <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+            <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-white/10 bg-black/60">
+              <div class="flex flex-wrap gap-1.5">
+                ${langs
+                  .map(
+                    (l) => `
+                      <button type="button" data-rx-lang="${l.id}" class="rounded-md px-2.5 py-1 font-fira text-[11px] cursor-pointer ${
+                        codeLang === l.id
+                          ? 'bg-[#00ffff]/15 text-[#00ffff] border border-[#00ffff]/45'
+                          : 'text-[#888] hover:text-white border border-transparent'
+                      }">${l.label}</button>
+                    `,
+                  )
+                  .join('')}
+              </div>
+              <button id="rx-copy-code" type="button" class="rounded border border-white/15 bg-black px-2.5 py-1 font-fira text-[10px] text-[#f3eb2c] cursor-pointer">COPY CODE</button>
+            </div>
+            <pre class="p-4 font-fira text-xs text-[#e0e0e0] overflow-x-auto leading-relaxed">${escapeHtml(snippet)}</pre>
+          </div>
+        `;
+      } else {
+        const q = quickRefQuery.trim().toLowerCase();
+        const filtered = REGEX_QUICK_REFERENCE.filter(
+          (item) =>
+            !q ||
+            item.token.toLowerCase().includes(q) ||
+            item.description.toLowerCase().includes(q) ||
+            item.category.toLowerCase().includes(q),
+        );
+        bodyHtml = `
+          <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">Click any token to insert at cursor</span>
+              <input id="rx-qr-search" type="text" value="${escapeHtml(quickRefQuery)}" placeholder="Filter tokens (e.g. lookahead, digit)..." class="cyber-input !py-1.5 !text-xs sm:w-64" />
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              ${filtered
+                .map(
+                  (item) => `
+                    <button type="button" data-rx-insert="${escapeHtml(item.token)}" class="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/70 px-3 py-2 text-left hover:border-[#00ffff]/60 transition-colors cursor-pointer">
+                      <code class="font-fira text-xs font-bold text-[#f3eb2c] shrink-0">${escapeHtml(item.token)}</code>
+                      <span class="font-fira text-[11px] text-[#aaa] truncate">${escapeHtml(item.description)}</span>
+                    </button>
+                  `,
+                )
+                .join('')}
+            </div>
+          </div>
+        `;
+      }
 
       outputEl.innerHTML = `
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           ${statCard('MATCHES', `${res.matchCount}${res.truncated ? '+' : ''}`, res.matchCount > 0 ? 'green' : 'yellow')}
           ${statCard('FLAGS', `/${res.flags || 'none'}`, 'cyan')}
-          ${statCard('TOKENS', String(res.tokens.length), 'white')}
+          ${statCard('EVAL TIME', `${evalMs} ms`, 'white')}
           ${statCard('GROUPS / MATCH', String(res.matches[0]?.groups.length ?? 0), 'white')}
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
-          <div class="xl:col-span-7 rounded-xl border border-white/10 bg-[#050505] overflow-x-auto">
-            <div class="px-4 py-2.5 border-b border-white/10 font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">MATCH &amp; CAPTURE GROUP INFORMATION</div>
-            <table class="w-full text-left font-fira text-xs">
-              <thead class="border-b border-white/10 text-[10px] uppercase tracking-[0.18em] text-[#858585]">
-                <tr><th class="px-4 py-2">MATCH</th><th class="px-4 py-2">RANGE</th><th class="px-4 py-2">FULL MATCH</th><th class="px-4 py-2">GROUPS</th></tr>
-              </thead>
-              <tbody class="divide-y divide-white/5">${matchRows}</tbody>
-            </table>
-          </div>
-          <div class="xl:col-span-5 rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
-            <div class="px-4 py-2.5 border-b border-white/10 font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">PATTERN EXPLANATION</div>
-            <div class="max-h-[340px] overflow-y-auto">${tokenRows}</div>
-          </div>
+        <div class="inline-flex flex-wrap gap-1.5 rounded-xl border border-white/10 bg-black/80 p-1.5 self-start">
+          ${panelTabs
+            .map(
+              (t) => `
+                <button type="button" data-rx-panel="${t.id}" class="rounded-lg px-3 py-1.5 font-fira text-xs font-semibold cursor-pointer ${
+                  activePanel === t.id
+                    ? 'bg-[#00ffff]/15 text-[#00ffff] border border-[#00ffff]/45'
+                    : 'text-[#888] hover:text-white border border-transparent'
+                }">${escapeHtml(t.label)}</button>
+              `,
+            )
+            .join('')}
         </div>
+
+        ${bodyHtml}
       `;
+
+      outputEl.querySelectorAll<HTMLButtonElement>('[data-rx-panel]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activePanel = btn.dataset.rxPanel as typeof activePanel;
+          renderRegex();
+        });
+      });
+
+      outputEl.querySelectorAll<HTMLButtonElement>('[data-rx-lang]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          codeLang = btn.dataset.rxLang as RegexCodeLanguage;
+          renderRegex();
+        });
+      });
+
+      document.getElementById('rx-copy-code')?.addEventListener('click', (e) => {
+        const snippet = generateRegexCode(codeLang, patternInput.value, currentFlags(), replaceInput.value);
+        void copyText(snippet, e.currentTarget as HTMLElement, 'COPY CODE');
+      });
+
+      document.getElementById('rx-add-test')?.addEventListener('click', () => {
+        unitTests = [...unitTests, { id: `t${Date.now()}`, input: '', expect: 'should_match' }];
+        renderRegex();
+      });
+
+      outputEl.querySelectorAll<HTMLSelectElement>('[data-rx-ut-expect]').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          const idx = Number(sel.dataset.rxUtExpect);
+          unitTests[idx] = { ...unitTests[idx]!, expect: sel.value as RegexUnitTestCase['expect'] };
+          renderRegex();
+        });
+      });
+
+      outputEl.querySelectorAll<HTMLInputElement>('[data-rx-ut-input]').forEach((inp) => {
+        inp.addEventListener('change', () => {
+          const idx = Number(inp.dataset.rxUtInput);
+          unitTests[idx] = { ...unitTests[idx]!, input: inp.value };
+          renderRegex();
+        });
+      });
+
+      outputEl.querySelectorAll<HTMLButtonElement>('[data-rx-ut-del]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.rxUtDel);
+          unitTests = unitTests.filter((_, i) => i !== idx);
+          renderRegex();
+        });
+      });
+
+      const qrSearch = document.getElementById('rx-qr-search') as HTMLInputElement | null;
+      qrSearch?.addEventListener('input', () => {
+        quickRefQuery = qrSearch.value;
+        renderRegex();
+        const nextSearch = document.getElementById('rx-qr-search') as HTMLInputElement | null;
+        if (nextSearch) {
+          nextSearch.focus();
+          nextSearch.setSelectionRange(nextSearch.value.length, nextSearch.value.length);
+        }
+      });
+
+      outputEl.querySelectorAll<HTMLButtonElement>('[data-rx-insert]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          insertTokenAtCursor(btn.dataset.rxInsert ?? '');
+        });
+      });
     } catch (err) {
       highlightedEl.textContent = testInput.value;
       replacedEl.textContent = '';
@@ -4838,7 +5497,7 @@ function mountSpf(controlsEl: HTMLElement, outputEl: HTMLElement): void {
       <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
         <div class="md:col-span-5">
           <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Domain Name (or MAIL FROM domain)</label>
-          <input id="tool-primary-input" type="text" class="cyber-input" value="gmail.com" placeholder="e.g. gmail.com or justanother.engineer" required />
+          <input id="tool-primary-input" type="text" class="cyber-input" value="google.com" placeholder="e.g. google.com" required />
         </div>
         <div class="md:col-span-4">
           <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Sending Server IP (Optional for Basic audit)</label>
@@ -4853,7 +5512,7 @@ function mountSpf(controlsEl: HTMLElement, outputEl: HTMLElement): void {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">MAIL FROM / Return-Path Address</label>
-            <input id="spf-sender" type="text" class="cyber-input text-xs" placeholder="e.g. bounce@gmail.com" />
+            <input id="spf-sender" type="text" class="cyber-input text-xs" placeholder="e.g. bounce@google.com" />
           </div>
           <div>
             <label class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">HELO / EHLO Hostname</label>
@@ -6478,7 +7137,1992 @@ function mountIrishTax(controlsEl: HTMLElement, outputEl: HTMLElement): void {
   renderOutput();
 }
 
+function mountJsonBrowser(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  const sampleJson = JSON.stringify(
+    {
+      service: {
+        name: 'lui.z-tools',
+        version: '2.6.0',
+        runtime: 'bun',
+        healthy: true,
+        tls: { enabled: true, protocol: 'TLSv1.3', alpn: ['h2', 'http/1.1'] },
+      },
+      regions: [
+        { id: 'eu-central-1', city: 'Frankfurt', latencyMs: 14.2, active: true },
+        { id: 'eu-west-3', city: 'Paris', latencyMs: 21.8, active: true },
+        { id: 'us-east-1', city: 'Virginia', latencyMs: 88.5, active: true },
+        { id: 'ap-northeast-1', city: 'Tokyo', latencyMs: 214.0, active: false },
+      ],
+      limits: {
+        maxPorts: 64,
+        maxWebhookEvents: 500,
+        maxPayloadBytes: 262144,
+        deprecated: null,
+      },
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    },
+    null,
+    2,
+  );
+
+  let parsedValue: unknown = JSON.parse(sampleJson);
+  let parseError: string | null = null;
+  let searchQuery = '';
+  let inputCollapsed = false;
+  let selectedPath = '$';
+  let selectedValue: unknown = parsedValue;
+  const expandedPaths = new Set<string>();
+
+  const collectContainerPaths = (val: unknown, maxDepth: number): Set<string> => {
+    const paths = new Set<string>();
+    const walk = (node: unknown, segs: JsonPathSegment[], depth: number) => {
+      if (node === null || typeof node !== 'object') return;
+      if (depth < maxDepth) {
+        paths.add(formatJsonPath(segs));
+        if (Array.isArray(node)) {
+          node.forEach((child, idx) => walk(child, [...segs, idx], depth + 1));
+        } else {
+          Object.entries(node as Record<string, unknown>).forEach(([k, v]) =>
+            walk(v, [...segs, k], depth + 1),
+          );
+        }
+      }
+    };
+    walk(val, [], 0);
+    return paths;
+  };
+
+  const setExpandedDepth = (depth: number) => {
+    expandedPaths.clear();
+    if (parseError) return;
+    for (const p of collectContainerPaths(parsedValue, depth)) {
+      expandedPaths.add(p);
+    }
+  };
+
+  setExpandedDepth(2);
+
+  controlsEl.innerHTML = `
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+          <button id="jb-toggle-input" type="button" class="px-2.5 py-1.5 rounded-lg border border-[#00ffff]/40 bg-[#00ffff]/10 text-[#00ffff] hover:bg-[#00ffff]/20 transition-colors cursor-pointer">HIDE INPUT</button>
+          <button id="jb-sample-btn" type="button" class="px-2.5 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#bbb] hover:text-[#f3eb2c] transition-colors cursor-pointer">SAMPLE</button>
+          <button id="jb-format-btn" type="button" class="px-2.5 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#bbb] hover:text-[#00ffff] transition-colors cursor-pointer">FORMAT</button>
+          <button id="jb-minify-btn" type="button" class="px-2.5 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#bbb] hover:text-[#00ffff] transition-colors cursor-pointer">MINIFY</button>
+          <button id="jb-clear-btn" type="button" class="px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-rose-950/15 text-rose-300 hover:border-rose-400/60 transition-colors cursor-pointer">CLEAR</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+          <button id="jb-expand-all" type="button" class="px-2.5 py-1.5 rounded-lg border border-emerald-400/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors cursor-pointer">EXPAND ALL</button>
+          <button id="jb-collapse-all" type="button" class="px-2.5 py-1.5 rounded-lg border border-[#f3eb2c]/40 bg-[#f3eb2c]/10 text-[#f3eb2c] hover:bg-[#f3eb2c]/20 transition-colors cursor-pointer">COLLAPSE ALL</button>
+          <button data-jb-depth="1" type="button" class="px-2 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#aaa] hover:text-white cursor-pointer">LVL 1</button>
+          <button data-jb-depth="2" type="button" class="px-2 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#aaa] hover:text-white cursor-pointer">LVL 2</button>
+          <button data-jb-depth="3" type="button" class="px-2 py-1.5 rounded-lg border border-white/15 bg-[#050505] text-[#aaa] hover:text-white cursor-pointer">LVL 3</button>
+        </div>
+      </div>
+
+      <div id="jb-input-wrap" class="rounded-xl border border-white/10 bg-[#050505] p-3 flex flex-col gap-2">
+        <div class="flex items-center justify-between font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585]">
+          <span>JSON INPUT</span>
+          <span id="jb-byte-count" class="text-[#00ffff]">${formatBytes(new TextEncoder().encode(sampleJson).length)}</span>
+        </div>
+        <textarea
+          id="jb-input"
+          rows="7"
+          spellcheck="false"
+          placeholder="Paste any JSON object or array here..."
+          class="w-full rounded-lg border border-white/10 bg-black p-3 font-fira text-xs text-white focus:outline-none focus:border-[#00ffff]/60 resize-y"
+        >${escapeHtml(sampleJson)}</textarea>
+      </div>
+
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
+        <input
+          id="jb-search"
+          type="text"
+          placeholder="Search keys or values in tree..."
+          autocomplete="off"
+          spellcheck="false"
+          class="cyber-input !py-2 !text-xs flex-1"
+        />
+        <span id="jb-match-count" class="font-fira text-[11px] text-[#858585] shrink-0"></span>
+      </div>
+    </div>
+  `;
+
+  const inputWrap = controlsEl.querySelector<HTMLElement>('#jb-input-wrap')!;
+  const toggleInputBtn = controlsEl.querySelector<HTMLButtonElement>('#jb-toggle-input')!;
+  const textarea = controlsEl.querySelector<HTMLTextAreaElement>('#jb-input')!;
+  const byteCountEl = controlsEl.querySelector<HTMLElement>('#jb-byte-count')!;
+  const searchInput = controlsEl.querySelector<HTMLInputElement>('#jb-search')!;
+  const matchCountEl = controlsEl.querySelector<HTMLElement>('#jb-match-count')!;
+
+  const pathValueMap = new Map<string, unknown>();
+
+  const renderPrimitive = (val: unknown): string => {
+    if (typeof val === 'string') {
+      return `<span class="text-emerald-400 break-all">"${escapeHtml(val)}"</span>`;
+    }
+    if (typeof val === 'number') {
+      return `<span class="text-[#f3eb2c]">${String(val)}</span>`;
+    }
+    if (typeof val === 'boolean') {
+      return `<span class="text-purple-400">${String(val)}</span>`;
+    }
+    return `<span class="text-rose-400 italic">null</span>`;
+  };
+
+  const renderTree = () => {
+    pathValueMap.clear();
+    if (parseError) {
+      matchCountEl.textContent = '';
+      showError(outputEl, `Invalid JSON: ${parseError}`);
+      return;
+    }
+
+    const stats = analyzeJsonTree(parsedValue);
+    const hasQuery = searchQuery.trim().length > 0;
+    const matches = hasQuery
+      ? searchJsonTree(parsedValue, searchQuery)
+      : { matchedPaths: new Set<string>(), ancestorPaths: new Set<string>() };
+
+    matchCountEl.textContent = hasQuery
+      ? `${matches.matchedPaths.size} match${matches.matchedPaths.size === 1 ? '' : 'es'}`
+      : '';
+
+    const renderNode = (
+      val: unknown,
+      segs: JsonPathSegment[],
+      keyLabel: string | number | null,
+      depth: number,
+    ): string => {
+      const path = formatJsonPath(segs);
+      pathValueMap.set(path, val);
+      const isMatched = matches.matchedPaths.has(path);
+      const isSelected = path === selectedPath;
+      const highlightCls = isMatched
+        ? 'bg-[#f3eb2c]/15 ring-1 ring-[#f3eb2c]/45'
+        : isSelected
+          ? 'bg-[#00ffff]/10'
+          : 'hover:bg-white/5';
+
+      const keyHtml =
+        keyLabel === null
+          ? ''
+          : typeof keyLabel === 'number'
+            ? `<span class="text-[#777] mr-1.5">[${keyLabel}]</span>`
+            : `<span class="text-[#00ffff] mr-1">"${escapeHtml(keyLabel)}"</span><span class="text-[#666] mr-1.5">:</span>`;
+
+      if (val !== null && typeof val === 'object') {
+        const isArr = Array.isArray(val);
+        const entries: Array<[string | number, unknown]> = isArr
+          ? val.map((item, idx) => [idx, item])
+          : Object.entries(val as Record<string, unknown>);
+        const count = entries.length;
+        const isExpanded =
+          expandedPaths.has(path) || (hasQuery && matches.ancestorPaths.has(path));
+        const openBracket = isArr ? '[' : '{';
+        const closeBracket = isArr ? ']' : '}';
+        const summaryText = isArr
+          ? `${count} item${count === 1 ? '' : 's'}`
+          : `${count} key${count === 1 ? '' : 's'}`;
+
+        const childrenHtml =
+          isExpanded && count > 0
+            ? `<div class="ml-4 pl-3 border-l border-white/10 flex flex-col gap-0.5 mt-0.5">${entries
+                .map(([k, v]) => renderNode(v, [...segs, k], k, depth + 1))
+                .join('')}</div>`
+            : '';
+
+        return `
+          <div class="font-fira text-xs leading-relaxed">
+            <div class="group flex items-center gap-1.5 rounded px-1.5 py-0.5 ${highlightCls}">
+              <button
+                type="button"
+                data-jb-toggle="${escapeHtml(path)}"
+                aria-expanded="${isExpanded ? 'true' : 'false'}"
+                class="inline-flex items-center justify-center w-4 h-4 rounded text-[#00ffff] hover:bg-white/10 cursor-pointer shrink-0 select-none"
+                title="${isExpanded ? 'Collapse' : 'Expand'}"
+              >${count === 0 ? '·' : isExpanded ? '▾' : '▸'}</button>
+              <button
+                type="button"
+                data-jb-select="${escapeHtml(path)}"
+                class="flex items-center flex-wrap text-left min-w-0 flex-1 cursor-pointer"
+              >
+                ${keyHtml}
+                <span class="text-[#999]">${openBracket}</span>
+                ${
+                  isExpanded
+                    ? count === 0
+                      ? `<span class="text-[#999]">${closeBracket}</span>`
+                      : `<span class="ml-1.5 text-[10px] text-[#666]">${summaryText}</span>`
+                    : `<span class="mx-1.5 px-1.5 py-0.2 rounded bg-white/5 border border-white/10 text-[10px] text-[#999]">${summaryText}</span><span class="text-[#999]">${closeBracket}</span>`
+                }
+              </button>
+            </div>
+            ${childrenHtml}
+            ${isExpanded && count > 0 ? `<div class="pl-6 text-[#999]">${closeBracket}</div>` : ''}
+          </div>
+        `;
+      }
+
+      return `
+        <div class="font-fira text-xs leading-relaxed">
+          <div class="group flex items-start gap-1.5 rounded px-1.5 py-0.5 pl-6 ${highlightCls}">
+            <button
+              type="button"
+              data-jb-select="${escapeHtml(path)}"
+              class="flex items-baseline flex-wrap text-left min-w-0 flex-1 cursor-pointer"
+            >
+              ${keyHtml}${renderPrimitive(val)}
+            </button>
+          </div>
+        </div>
+      `;
+    };
+
+    outputEl.innerHTML = `
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        ${statCard('TOTAL NODES', String(stats.totalNodes), 'cyan')}
+        ${statCard('OBJECTS', String(stats.objects), 'yellow')}
+        ${statCard('ARRAYS', String(stats.arrays), 'white')}
+        ${statCard('MAX DEPTH', String(stats.maxDepth), 'green')}
+      </div>
+
+      <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-white/10 bg-black/60">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <span class="font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] shrink-0">PATH</span>
+            <code id="jb-selected-path" class="font-fira text-xs text-[#f3eb2c] truncate select-all">${escapeHtml(selectedPath)}</code>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="jb-copy-path" type="button" class="px-2.5 py-1 rounded border border-white/15 bg-black font-fira text-[10px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 cursor-pointer">COPY PATH</button>
+            <button id="jb-copy-val" type="button" class="px-2.5 py-1 rounded border border-white/15 bg-black font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer">COPY VALUE</button>
+          </div>
+        </div>
+
+        <div id="jb-tree-container" class="p-4 overflow-x-auto flex flex-col gap-0.5">
+          ${renderNode(parsedValue, [], null, 0)}
+        </div>
+      </div>
+    `;
+
+    outputEl.querySelectorAll<HTMLButtonElement>('[data-jb-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.jbToggle;
+        if (!p) return;
+        if (expandedPaths.has(p)) {
+          expandedPaths.delete(p);
+        } else {
+          expandedPaths.add(p);
+        }
+        renderTree();
+      });
+    });
+
+    outputEl.querySelectorAll<HTMLButtonElement>('[data-jb-select]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.jbSelect;
+        if (!p) return;
+        selectedPath = p;
+        selectedValue = pathValueMap.get(p);
+        // Also toggle containers on click for smooth section-by-section browsing
+        if (selectedValue !== null && typeof selectedValue === 'object') {
+          if (expandedPaths.has(p)) {
+            expandedPaths.delete(p);
+          } else {
+            expandedPaths.add(p);
+          }
+        }
+        renderTree();
+      });
+    });
+
+    const copyPathBtn = outputEl.querySelector<HTMLButtonElement>('#jb-copy-path');
+    copyPathBtn?.addEventListener('click', () => {
+      void copyText(selectedPath, copyPathBtn, 'COPY PATH');
+    });
+
+    const copyValBtn = outputEl.querySelector<HTMLButtonElement>('#jb-copy-val');
+    copyValBtn?.addEventListener('click', () => {
+      const text =
+        typeof selectedValue === 'string'
+          ? selectedValue
+          : JSON.stringify(selectedValue, null, 2);
+      void copyText(text, copyValBtn, 'COPY VALUE');
+    });
+  };
+
+  const parseInput = (resetDepth = false) => {
+    const raw = textarea.value;
+    byteCountEl.textContent = formatBytes(new TextEncoder().encode(raw).length);
+    if (!raw.trim()) {
+      parseError = 'Enter or paste JSON to explore.';
+      renderTree();
+      return;
+    }
+    try {
+      parsedValue = JSON.parse(raw);
+      parseError = null;
+      selectedPath = '$';
+      selectedValue = parsedValue;
+      if (resetDepth) setExpandedDepth(2);
+      else expandedPaths.add('$');
+    } catch (err) {
+      parseError = err instanceof Error ? err.message : 'Syntax error';
+    }
+    renderTree();
+  };
+
+  toggleInputBtn.addEventListener('click', () => {
+    inputCollapsed = !inputCollapsed;
+    inputWrap.classList.toggle('hidden', inputCollapsed);
+    toggleInputBtn.textContent = inputCollapsed ? 'SHOW INPUT' : 'HIDE INPUT';
+  });
+
+  textarea.addEventListener('input', () => parseInput(false));
+
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value;
+    renderTree();
+  });
+
+  controlsEl.querySelector('#jb-expand-all')?.addEventListener('click', () => {
+    setExpandedDepth(Number.POSITIVE_INFINITY);
+    renderTree();
+  });
+
+  controlsEl.querySelector('#jb-collapse-all')?.addEventListener('click', () => {
+    // Keep root open so every top-level section is collapsed and ready to expand one by one
+    setExpandedDepth(1);
+    renderTree();
+  });
+
+  controlsEl.querySelectorAll<HTMLButtonElement>('[data-jb-depth]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const d = Number(btn.dataset.jbDepth ?? '2');
+      setExpandedDepth(d);
+      renderTree();
+    });
+  });
+
+  controlsEl.querySelector('#jb-sample-btn')?.addEventListener('click', () => {
+    textarea.value = sampleJson;
+    parseInput(true);
+  });
+
+  controlsEl.querySelector('#jb-format-btn')?.addEventListener('click', () => {
+    if (!parseError) {
+      textarea.value = JSON.stringify(parsedValue, null, 2);
+      byteCountEl.textContent = formatBytes(new TextEncoder().encode(textarea.value).length);
+    }
+  });
+
+  controlsEl.querySelector('#jb-minify-btn')?.addEventListener('click', () => {
+    if (!parseError) {
+      textarea.value = JSON.stringify(parsedValue);
+      byteCountEl.textContent = formatBytes(new TextEncoder().encode(textarea.value).length);
+    }
+  });
+
+  controlsEl.querySelector('#jb-clear-btn')?.addEventListener('click', () => {
+    textarea.value = '';
+    searchInput.value = '';
+    searchQuery = '';
+    parseInput(false);
+    if (inputCollapsed) {
+      inputCollapsed = false;
+      inputWrap.classList.remove('hidden');
+      toggleInputBtn.textContent = 'HIDE INPUT';
+    }
+    textarea.focus();
+  });
+
+  renderTree();
+}
+
+function mountSoil(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  const inputs: SoilInputs = { ...DEFAULT_SOIL_INPUTS };
+  let customBagLitres = 40;
+  let customBagPrice = 0;
+
+  const unitOptions = (selected: SoilLengthUnit) =>
+    (
+      [
+        ['m', 'Meters (m)'],
+        ['cm', 'Centimeters (cm)'],
+        ['mm', 'Millimeters (mm)'],
+        ['ft', 'Feet (ft)'],
+        ['in', 'Inches (in)'],
+        ['yd', 'Yards (yd)'],
+      ] as const
+    )
+      .map(
+        ([u, label]) =>
+          `<option value="${u}"${u === selected ? ' selected' : ''}>${label}</option>`,
+      )
+      .join('');
+
+  controlsEl.innerHTML = `
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-center gap-1.5 font-fira text-[11px]">
+        <span class="text-[#858585] text-[10px] uppercase tracking-wider mr-1">PRESETS:</span>
+        <button type="button" data-soil-preset="1.2,m,1.2,m,30,cm" class="px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#00ffff]/60 hover:text-[#00ffff] cursor-pointer">1.2×1.2m × 30cm</button>
+        <button type="button" data-soil-preset="2.4,m,1.2,m,30,cm" class="px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#00ffff]/60 hover:text-[#00ffff] cursor-pointer">2.4×1.2m × 30cm (8×4ft)</button>
+        <button type="button" data-soil-preset="3,m,1.2,m,45,cm" class="px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#00ffff]/60 hover:text-[#00ffff] cursor-pointer">3×1.2m × 45cm Deep</button>
+        <button type="button" data-soil-preset="10,m,5,m,5,cm" class="px-2.5 py-1 rounded-md border border-white/15 bg-[#050505] text-[#bbb] hover:border-[#f3eb2c]/60 hover:text-[#f3eb2c] cursor-pointer">10×5m × 5cm Lawn</button>
+      </div>
+
+      <div class="rounded-xl border border-white/10 bg-[#050505] p-4 sm:p-5 flex flex-col gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div>
+            <label for="soil-shape" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Bed Shape</label>
+            <select id="soil-shape" class="cyber-select w-full">
+              <option value="rectangle" selected>Rectangle / Raised Bed</option>
+              <option value="circle">Circle / Round Planter</option>
+              <option value="triangle">Triangle / Corner Bed</option>
+            </select>
+          </div>
+          <div class="sm:col-span-1 lg:col-span-2">
+            <label for="soil-material" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Soil / Compost / Mulch Mix</label>
+            <select id="soil-material" class="cyber-select w-full">
+              ${SOIL_MATERIALS.map(
+                (m) =>
+                  `<option value="${m.id}"${m.id === inputs.material ? ' selected' : ''}>${escapeHtml(m.label)} (${m.densityKgPerM3} kg/m³)</option>`,
+              ).join('')}
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label for="soil-beds" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Beds Qty</label>
+              <input id="soil-beds" type="number" min="1" max="1000" step="1" value="${inputs.beds}" class="cyber-input" />
+            </div>
+            <div>
+              <label for="soil-buffer" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#858585] mb-1.5">Settling +%</label>
+              <select id="soil-buffer" class="cyber-select w-full">
+                <option value="0">0%</option>
+                <option value="10" selected>+10%</option>
+                <option value="15">+15%</option>
+                <option value="20">+20%</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 border-t border-white/10 pt-4">
+          <div>
+            <label id="soil-length-label" for="soil-length" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#00ffff] mb-1.5">Length</label>
+            <div class="flex gap-2">
+              <input id="soil-length" type="number" min="0" step="any" value="${inputs.length}" class="cyber-input flex-1 min-w-0" />
+              <select id="soil-length-unit" aria-label="Length unit" class="cyber-select w-36 shrink-0">
+                ${unitOptions(inputs.lengthUnit)}
+              </select>
+            </div>
+          </div>
+
+          <div id="soil-width-wrap">
+            <label id="soil-width-label" for="soil-width" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#00ffff] mb-1.5">Width</label>
+            <div class="flex gap-2">
+              <input id="soil-width" type="number" min="0" step="any" value="${inputs.width}" class="cyber-input flex-1 min-w-0" />
+              <select id="soil-width-unit" aria-label="Width unit" class="cyber-select w-36 shrink-0">
+                ${unitOptions(inputs.widthUnit)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="soil-depth" class="block font-fira text-[10px] uppercase tracking-[0.18em] text-[#f3eb2c] mb-1.5">Depth / Thickness</label>
+            <div class="flex gap-2">
+              <input id="soil-depth" type="number" min="0" step="any" value="${inputs.depth}" class="cyber-input flex-1 min-w-0" />
+              <select id="soil-depth-unit" aria-label="Depth unit" class="cyber-select w-36 shrink-0">
+                ${unitOptions(inputs.depthUnit)}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const shapeEl = controlsEl.querySelector<HTMLSelectElement>('#soil-shape')!;
+  const materialEl = controlsEl.querySelector<HTMLSelectElement>('#soil-material')!;
+  const bedsEl = controlsEl.querySelector<HTMLInputElement>('#soil-beds')!;
+  const bufferEl = controlsEl.querySelector<HTMLSelectElement>('#soil-buffer')!;
+  const lengthEl = controlsEl.querySelector<HTMLInputElement>('#soil-length')!;
+  const lengthUnitEl = controlsEl.querySelector<HTMLSelectElement>('#soil-length-unit')!;
+  const widthWrapEl = controlsEl.querySelector<HTMLElement>('#soil-width-wrap')!;
+  const lengthLabelEl = controlsEl.querySelector<HTMLElement>('#soil-length-label')!;
+  const widthLabelEl = controlsEl.querySelector<HTMLElement>('#soil-width-label')!;
+  const widthEl = controlsEl.querySelector<HTMLInputElement>('#soil-width')!;
+  const widthUnitEl = controlsEl.querySelector<HTMLSelectElement>('#soil-width-unit')!;
+  const depthEl = controlsEl.querySelector<HTMLInputElement>('#soil-depth')!;
+  const depthUnitEl = controlsEl.querySelector<HTMLSelectElement>('#soil-depth-unit')!;
+
+  const syncShapeLabels = () => {
+    if (inputs.shape === 'circle') {
+      lengthLabelEl.textContent = 'Diameter';
+      widthWrapEl.classList.add('hidden');
+    } else if (inputs.shape === 'triangle') {
+      lengthLabelEl.textContent = 'Base';
+      widthLabelEl.textContent = 'Height';
+      widthWrapEl.classList.remove('hidden');
+    } else {
+      lengthLabelEl.textContent = 'Length';
+      widthLabelEl.textContent = 'Width';
+      widthWrapEl.classList.remove('hidden');
+    }
+  };
+
+  outputEl.innerHTML = `
+    <div id="soil-stats-output" class="flex flex-col gap-5"></div>
+    <div class="rounded-xl border border-white/10 bg-[#050505] p-4 sm:p-5 flex flex-col gap-3">
+      <p class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#00ffff]">CUSTOM BAG &amp; COST ESTIMATOR</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+        <div>
+          <label for="soil-custom-bag" class="block font-fira text-[10px] uppercase tracking-wider text-[#858585] mb-1.5">Bag Size (Litres)</label>
+          <input id="soil-custom-bag" type="number" min="1" max="5000" step="1" value="${customBagLitres}" class="cyber-input" />
+        </div>
+        <div>
+          <label for="soil-custom-price" class="block font-fira text-[10px] uppercase tracking-wider text-[#858585] mb-1.5">Price per Bag (€ optional)</label>
+          <input id="soil-custom-price" type="number" min="0" step="0.5" value="" placeholder="e.g. 8.50" class="cyber-input" />
+        </div>
+        <div id="soil-custom-summary" class="rounded-lg border border-[#f3eb2c]/30 bg-black/60 px-3.5 py-2.5 font-fira text-xs"></div>
+      </div>
+    </div>
+  `;
+
+  const statsOutEl = outputEl.querySelector<HTMLElement>('#soil-stats-output')!;
+  const customBagEl = outputEl.querySelector<HTMLInputElement>('#soil-custom-bag')!;
+  const customPriceEl = outputEl.querySelector<HTMLInputElement>('#soil-custom-price')!;
+  const customSummaryEl = outputEl.querySelector<HTMLElement>('#soil-custom-summary')!;
+
+  const fmt = (n: number, digits = 2) =>
+    new Intl.NumberFormat('en-IE', { maximumFractionDigits: digits }).format(n);
+
+  const renderCustomSummary = (litres: number) => {
+    const size = Math.max(1, Number(customBagLitres) || 40);
+    const bags = litres > 0 ? Math.ceil(litres / size) : 0;
+    const price = Math.max(0, Number(customBagPrice) || 0);
+    const totalCost = bags * price;
+    customSummaryEl.innerHTML = `
+      <span class="text-[#858585] text-[10px] uppercase tracking-wider block">NEEDED (${size}L BAGS)</span>
+      <span class="text-base font-bold text-[#f3eb2c]">${bags} bag${bags === 1 ? '' : 's'}</span>
+      ${price > 0 ? `<span class="text-emerald-400 ml-2 font-bold">· €${fmt(totalCost, 2)}</span>` : ''}
+    `;
+  };
+
+  const renderOutput = () => {
+    const res = calculateSoilVolume(inputs);
+    renderCustomSummary(res.litres);
+
+    statsOutEl.innerHTML = `
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        ${statCard('TOTAL LITRES', `${fmt(res.litres, 0)} L`, 'green')}
+        ${statCard('CUBIC METERS', `${fmt(res.volumeM3, 3)} m³`, 'yellow')}
+        ${statCard('EST. WEIGHT', `${fmt(res.weightTonnes, 2)} t (${fmt(res.weightKg, 0)} kg)`, 'cyan')}
+        ${statCard('SURFACE AREA', `${fmt(res.areaM2, 2)} m²`, 'white')}
+      </div>
+
+      <div class="rounded-xl border border-white/10 bg-[#050505] overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-white/10 bg-black/60">
+          <span class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#858585]">BAGS &amp; BULK ORDER GUIDE</span>
+          <span class="font-fira text-[11px] text-[#777]">${escapeHtml(res.material.note)}${inputs.bufferPercent > 0 ? ` · includes +${inputs.bufferPercent}% settling` : ''}</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-white/8">
+          ${res.bags
+            .map(
+              (b) => `
+                <div class="p-4 flex flex-col justify-between gap-1">
+                  <span class="font-fira text-[10px] uppercase tracking-wider text-[#858585]">${escapeHtml(b.label)}</span>
+                  <span class="font-fira text-2xl font-black ${b.litresPerBag === 850 ? 'text-[#f3eb2c]' : 'text-white'}">${b.bagsNeeded}</span>
+                  <span class="font-fira text-[10px] text-[#666]">Exact: ${fmt(b.bagsExact, 2)}</span>
+                </div>
+              `,
+            )
+            .join('')}
+        </div>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2.5 border-t border-white/10 bg-black/40 font-fira text-[11px] text-[#858585]">
+          <span>Imperial: <strong class="text-white">${fmt(res.cubicFeet, 1)} ft³</strong> / <strong class="text-white">${fmt(res.cubicYards, 2)} yd³</strong></span>
+          <span>Base (0% buffer): <strong class="text-[#00ffff]">${fmt(res.baseVolumeM3 * 1000, 0)} L</strong> (${fmt(res.baseVolumeM3, 3)} m³)</span>
+        </div>
+      </div>
+    `;
+  };
+
+  const syncInputs = () => {
+    inputs.shape = shapeEl.value as SoilShape;
+    inputs.material = materialEl.value as SoilMaterialId;
+    inputs.beds = Math.max(1, Number(bedsEl.value) || 1);
+    inputs.bufferPercent = Number(bufferEl.value) || 0;
+    inputs.length = Number(lengthEl.value) || 0;
+    inputs.lengthUnit = lengthUnitEl.value as SoilLengthUnit;
+    inputs.width = Number(widthEl.value) || 0;
+    inputs.widthUnit = widthUnitEl.value as SoilLengthUnit;
+    inputs.depth = Number(depthEl.value) || 0;
+    inputs.depthUnit = depthUnitEl.value as SoilLengthUnit;
+    syncShapeLabels();
+    renderOutput();
+  };
+
+  [
+    shapeEl,
+    materialEl,
+    bedsEl,
+    bufferEl,
+    lengthEl,
+    lengthUnitEl,
+    widthEl,
+    widthUnitEl,
+    depthEl,
+    depthUnitEl,
+  ].forEach((el) => {
+    el.addEventListener('input', syncInputs);
+    el.addEventListener('change', syncInputs);
+  });
+
+  controlsEl.querySelectorAll<HTMLButtonElement>('[data-soil-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const [l, lu, w, wu, d, du] = (btn.dataset.soilPreset ?? '').split(',');
+      shapeEl.value = 'rectangle';
+      lengthEl.value = l;
+      lengthUnitEl.value = lu;
+      widthEl.value = w;
+      widthUnitEl.value = wu;
+      depthEl.value = d;
+      depthUnitEl.value = du;
+      syncInputs();
+    });
+  });
+
+  customBagEl.addEventListener('input', () => {
+    customBagLitres = Number(customBagEl.value) || 40;
+    renderCustomSummary(calculateSoilVolume(inputs).litres);
+  });
+
+  customPriceEl.addEventListener('input', () => {
+    customBagPrice = Number(customPriceEl.value) || 0;
+    renderCustomSummary(calculateSoilVolume(inputs).litres);
+  });
+
+  syncShapeLabels();
+  renderOutput();
+}
+
+function mountPassword(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  outputEl.innerHTML = '';
+
+  let pwType: PasswordType = 'random';
+  const randomOpts: RandomPasswordOptions = { ...DEFAULT_RANDOM_OPTIONS };
+  const memorableOpts: MemorablePasswordOptions = { ...DEFAULT_MEMORABLE_OPTIONS };
+  const pinOpts: PinPasswordOptions = { ...DEFAULT_PIN_OPTIONS };
+  let currentResult: PasswordResult = generatePassword({ type: 'random', random: randomOpts });
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const strengthColor = (strength: PasswordResult['strength']): string => {
+    switch (strength) {
+      case 'Weak':
+        return 'text-rose-400 border-rose-500/35 bg-rose-950/30';
+      case 'Fair':
+        return 'text-amber-300 border-amber-500/35 bg-amber-950/30';
+      case 'Good':
+        return 'text-[#f3eb2c] border-[#f3eb2c]/35 bg-[#f3eb2c]/10';
+      case 'Strong':
+        return 'text-[#00ffff] border-[#00ffff]/35 bg-[#00ffff]/10';
+      case 'Very Strong':
+        return 'text-emerald-400 border-emerald-500/35 bg-emerald-950/30';
+    }
+  };
+
+  const renderTokensHtml = (result: PasswordResult): string => {
+    return result.tokens
+      .map((t) => {
+        const ch = escapeHtml(t.char);
+        if (t.kind === 'number') {
+          return `<span class="text-[#38bdf8]">${ch}</span>`;
+        }
+        if (t.kind === 'symbol') {
+          return `<span class="text-[#f3eb2c]">${ch}</span>`;
+        }
+        return `<span class="text-white">${ch}</span>`;
+      })
+      .join('');
+  };
+
+  const syncCliSnippet = () => {
+    const snippetEl = document.getElementById('cli-snippet');
+    if (!snippetEl) return;
+    const origin = window.location.origin;
+    if (pwType === 'random') {
+      snippetEl.textContent = `curl -s "${origin}/api/password?type=random&length=${randomOpts.length}&numbers=${randomOpts.numbers}&symbols=${randomOpts.symbols}"`;
+    } else if (pwType === 'memorable') {
+      snippetEl.textContent = `curl -s "${origin}/api/password?type=memorable&words=${memorableOpts.words}&separator=${memorableOpts.separator}&capitalize=${memorableOpts.capitalize}&includeNumber=${memorableOpts.includeNumber}"`;
+    } else {
+      snippetEl.textContent = `curl -s "${origin}/api/password?type=pin&length=${pinOpts.length}"`;
+    }
+  };
+
+  const renderToggle = (id: string, label: string, checked: boolean): string => `
+    <label for="${id}" class="inline-flex items-center gap-3 cursor-pointer select-none">
+      <span class="font-inter text-sm text-[#a8a8a8]">${escapeHtml(label)}</span>
+      <button
+        id="${id}"
+        type="button"
+        role="switch"
+        aria-checked="${checked ? 'true' : 'false'}"
+        aria-label="${escapeHtml(label)}"
+        class="pw-toggle"
+      >
+        <span class="pw-toggle-knob" aria-hidden="true"></span>
+      </button>
+    </label>
+  `;
+
+  const renderCard = () => {
+    const sliderMin =
+      pwType === 'random' ? RANDOM_LENGTH_MIN : pwType === 'memorable' ? MEMORABLE_WORDS_MIN : PIN_LENGTH_MIN;
+    const sliderMax =
+      pwType === 'random' ? RANDOM_LENGTH_MAX : pwType === 'memorable' ? MEMORABLE_WORDS_MAX : PIN_LENGTH_MAX;
+    const sliderVal =
+      pwType === 'random' ? randomOpts.length : pwType === 'memorable' ? memorableOpts.words : pinOpts.length;
+    const sliderLabel = pwType === 'memorable' ? 'Words' : 'Characters';
+    const sliderPct = ((sliderVal - sliderMin) / (sliderMax - sliderMin)) * 100;
+
+    const tabs: Array<{ id: PasswordType; label: string; icon: typeof Shuffle }> = [
+      { id: 'random', label: 'Random', icon: Shuffle },
+      { id: 'memorable', label: 'Memorable', icon: Lightbulb },
+      { id: 'pin', label: 'PIN', icon: Hash },
+    ];
+
+    const optionsRowHtml =
+      pwType === 'random'
+        ? `
+          <div class="border-t border-white/10 pt-5 pb-1 flex flex-wrap items-center gap-x-8 gap-y-4">
+            ${renderToggle('pw-opt-numbers', 'Numbers', randomOpts.numbers)}
+            ${renderToggle('pw-opt-symbols', 'Symbols', randomOpts.symbols)}
+          </div>
+        `
+        : pwType === 'memorable'
+          ? `
+            <div class="border-t border-white/10 pt-5 pb-1 flex flex-wrap items-center justify-between gap-4">
+              <div class="flex flex-wrap items-center gap-x-7 gap-y-3">
+                ${renderToggle('pw-opt-capitalize', 'Capitalize', memorableOpts.capitalize)}
+                ${renderToggle('pw-opt-inc-num', 'Numbers', memorableOpts.includeNumber)}
+              </div>
+              <label class="inline-flex items-center gap-2.5">
+                <span class="font-inter text-sm text-[#a8a8a8]">Separator</span>
+                <select id="pw-opt-sep" class="cyber-select !py-1.5 !pl-3 !pr-8 !text-xs">
+                  <option value="hyphen" ${memorableOpts.separator === 'hyphen' ? 'selected' : ''}>Hyphen (-)</option>
+                  <option value="space" ${memorableOpts.separator === 'space' ? 'selected' : ''}>Space ( )</option>
+                  <option value="period" ${memorableOpts.separator === 'period' ? 'selected' : ''}>Period (.)</option>
+                  <option value="underscore" ${memorableOpts.separator === 'underscore' ? 'selected' : ''}>Underscore (_)</option>
+                  <option value="none" ${memorableOpts.separator === 'none' ? 'selected' : ''}>None</option>
+                </select>
+              </label>
+            </div>
+          `
+          : '';
+
+    const sizeClass =
+      currentResult.length > 44
+        ? 'text-sm sm:text-base'
+        : currentResult.length > 26
+          ? 'text-base sm:text-xl'
+          : 'text-xl sm:text-2xl';
+
+    controlsEl.innerHTML = `
+      <div class="max-w-xl mx-auto rounded-2xl border border-white/15 bg-[#07090d] p-5 sm:p-7 shadow-[0_0_40px_rgba(0,255,255,0.06)] flex flex-col gap-5">
+        <!-- Password Type Selector -->
+        <div class="flex flex-col gap-3">
+          <p class="font-inter text-sm font-semibold text-white">Choose password type</p>
+          <div role="tablist" aria-label="Password type" class="grid grid-cols-3 gap-1.5 rounded-xl bg-white/[0.06] border border-white/10 p-1.5">
+            ${tabs
+              .map((t) => {
+                const active = pwType === t.id;
+                return `
+                  <button
+                    type="button"
+                    role="tab"
+                    data-pw-type="${t.id}"
+                    aria-selected="${active ? 'true' : 'false'}"
+                    class="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 font-inter text-xs sm:text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                      active
+                        ? 'bg-[#101824] text-white border border-[#00ffff]/55 shadow-[0_0_16px_rgba(0,255,255,0.14)]'
+                        : 'text-[#9a9a9a] hover:text-white border border-transparent'
+                    }"
+                  >
+                    <span class="${active ? 'text-[#00ffff]' : 'text-[#888]'} inline-flex shrink-0">${renderIconSvg(t.icon, 15)}</span>
+                    <span>${t.label}</span>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+
+        <!-- Customize Section -->
+        <div class="flex flex-col gap-5">
+          <p class="font-inter text-sm font-semibold text-white">Customize your new password</p>
+
+          <div class="border-t border-white/10 pt-5 flex items-center gap-4">
+            <label for="pw-length-slider" class="font-inter text-sm text-[#a8a8a8] shrink-0 min-w-[78px]">${sliderLabel}</label>
+            <input
+              id="pw-length-slider"
+              type="range"
+              min="${sliderMin}"
+              max="${sliderMax}"
+              value="${sliderVal}"
+              style="--slider-pct: ${sliderPct.toFixed(2)}%"
+              class="pw-range flex-1"
+            />
+            <input
+              id="pw-length-num"
+              type="number"
+              min="${sliderMin}"
+              max="${sliderMax}"
+              value="${sliderVal}"
+              aria-label="${sliderLabel} count"
+              class="w-16 h-10 rounded-xl border border-white/15 bg-black/85 text-center font-fira text-sm font-semibold text-white outline-none transition-colors focus:border-[#00ffff]/75"
+            />
+          </div>
+
+          ${optionsRowHtml}
+        </div>
+
+        <!-- Generated Password Display -->
+        <div class="border-t border-white/10 pt-5 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2">
+            <p class="font-inter text-sm font-semibold text-white">Generated password</p>
+            <span id="pw-strength-badge" class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-fira text-[10px] font-semibold uppercase tracking-wider ${strengthColor(currentResult.strength)}">
+              <span>${currentResult.strength}</span>
+              <span class="opacity-60">·</span>
+              <span>${Math.round(currentResult.entropyBits)} bits</span>
+            </span>
+          </div>
+
+          <div
+            id="pw-display-box"
+            role="status"
+            aria-live="polite"
+            title="Click to copy password"
+            class="min-h-[88px] rounded-xl border border-white/15 bg-black/85 px-5 py-4 flex items-center justify-center text-center cursor-pointer transition-colors hover:border-[#00ffff]/45"
+          >
+            <code id="pw-display-text" class="font-fira ${sizeClass} font-semibold tracking-wider break-all leading-relaxed select-all">${renderTokensHtml(currentResult)}</code>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <button
+            id="pw-copy-btn"
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f3eb2c] px-5 py-3.5 font-inter text-sm font-bold text-black shadow-[0_0_24px_rgba(243,235,44,0.22)] transition-all hover:bg-[#fbf36a] active:scale-[0.99] cursor-pointer"
+          >
+            <span id="pw-copy-icon" class="inline-flex">${renderIconSvg(Copy, 15)}</span>
+            <span id="pw-copy-label">Copy password</span>
+          </button>
+
+          <button
+            id="pw-refresh-btn"
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-xl border border-[#00ffff]/60 bg-black/60 px-5 py-3.5 font-inter text-sm font-semibold text-[#00ffff] transition-all hover:bg-[#00ffff]/10 hover:border-[#00ffff] active:scale-[0.99] cursor-pointer"
+          >
+            <span class="inline-flex">${renderIconSvg(RefreshCw, 15)}</span>
+            <span>Refresh password</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    bindCardEvents();
+    syncCliSnippet();
+  };
+
+  const updateGeneratedDisplay = () => {
+    currentResult = generatePassword({
+      type: pwType,
+      random: randomOpts,
+      memorable: memorableOpts,
+      pin: pinOpts,
+    });
+
+    const textEl = document.getElementById('pw-display-text');
+    const badgeEl = document.getElementById('pw-strength-badge');
+    if (textEl) {
+      const sizeClass =
+        currentResult.length > 44
+          ? 'text-sm sm:text-base'
+          : currentResult.length > 26
+            ? 'text-base sm:text-xl'
+            : 'text-xl sm:text-2xl';
+      textEl.className = `font-fira ${sizeClass} font-semibold tracking-wider break-all leading-relaxed select-all`;
+      textEl.innerHTML = renderTokensHtml(currentResult);
+    }
+    if (badgeEl) {
+      badgeEl.className = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-fira text-[10px] font-semibold uppercase tracking-wider ${strengthColor(currentResult.strength)}`;
+      badgeEl.innerHTML = `<span>${currentResult.strength}</span><span class="opacity-60">·</span><span>${Math.round(currentResult.entropyBits)} bits</span>`;
+    }
+    syncCliSnippet();
+  };
+
+  const triggerCopy = async () => {
+    const labelEl = document.getElementById('pw-copy-label');
+    const iconEl = document.getElementById('pw-copy-icon');
+    if (!labelEl || !iconEl) return;
+    if (copyTimer) clearTimeout(copyTimer);
+
+    try {
+      await navigator.clipboard.writeText(currentResult.password);
+      labelEl.textContent = 'Copied!';
+      iconEl.innerHTML = renderIconSvg(Check, 15);
+    } catch {
+      labelEl.textContent = 'Copy failed';
+    }
+
+    copyTimer = setTimeout(() => {
+      labelEl.textContent = 'Copy password';
+      iconEl.innerHTML = renderIconSvg(Copy, 15);
+      copyTimer = null;
+    }, 1500);
+  };
+
+  const bindCardEvents = () => {
+    controlsEl.querySelectorAll<HTMLButtonElement>('[data-pw-type]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.pwType as PasswordType;
+        if (next === pwType) return;
+        pwType = next;
+        currentResult = generatePassword({
+          type: pwType,
+          random: randomOpts,
+          memorable: memorableOpts,
+          pin: pinOpts,
+        });
+        renderCard();
+      });
+    });
+
+    const sliderEl = document.getElementById('pw-length-slider') as HTMLInputElement | null;
+    const numEl = document.getElementById('pw-length-num') as HTMLInputElement | null;
+
+    const applyCount = (raw: number, clampInputField: boolean) => {
+      const min =
+        pwType === 'random' ? RANDOM_LENGTH_MIN : pwType === 'memorable' ? MEMORABLE_WORDS_MIN : PIN_LENGTH_MIN;
+      const max =
+        pwType === 'random' ? RANDOM_LENGTH_MAX : pwType === 'memorable' ? MEMORABLE_WORDS_MAX : PIN_LENGTH_MAX;
+      const clamped = Math.min(max, Math.max(min, Math.round(raw)));
+      if (pwType === 'random') randomOpts.length = clamped;
+      else if (pwType === 'memorable') memorableOpts.words = clamped;
+      else pinOpts.length = clamped;
+
+      if (sliderEl) {
+        sliderEl.value = String(clamped);
+        const pct = ((clamped - min) / (max - min)) * 100;
+        sliderEl.style.setProperty('--slider-pct', `${pct.toFixed(2)}%`);
+      }
+      if (numEl && clampInputField) {
+        numEl.value = String(clamped);
+      }
+      updateGeneratedDisplay();
+    };
+
+    sliderEl?.addEventListener('input', () => {
+      applyCount(Number(sliderEl.value), true);
+    });
+
+    numEl?.addEventListener('input', () => {
+      const parsed = Number(numEl.value);
+      if (Number.isFinite(parsed) && numEl.value.trim() !== '') {
+        applyCount(parsed, false);
+      }
+    });
+
+    numEl?.addEventListener('blur', () => {
+      const parsed = Number(numEl.value);
+      const fallback =
+        pwType === 'random' ? randomOpts.length : pwType === 'memorable' ? memorableOpts.words : pinOpts.length;
+      applyCount(Number.isFinite(parsed) && numEl.value.trim() !== '' ? parsed : fallback, true);
+    });
+
+    const bindSwitch = (id: string, getVal: () => boolean, setVal: (next: boolean) => void) => {
+      const el = document.getElementById(id);
+      el?.addEventListener('click', () => {
+        const next = !getVal();
+        setVal(next);
+        el.setAttribute('aria-checked', next ? 'true' : 'false');
+        updateGeneratedDisplay();
+      });
+    };
+
+    bindSwitch('pw-opt-numbers', () => randomOpts.numbers, (v) => { randomOpts.numbers = v; });
+    bindSwitch('pw-opt-symbols', () => randomOpts.symbols, (v) => { randomOpts.symbols = v; });
+    bindSwitch('pw-opt-capitalize', () => memorableOpts.capitalize, (v) => { memorableOpts.capitalize = v; });
+    bindSwitch('pw-opt-inc-num', () => memorableOpts.includeNumber, (v) => { memorableOpts.includeNumber = v; });
+
+    const sepEl = document.getElementById('pw-opt-sep') as HTMLSelectElement | null;
+    sepEl?.addEventListener('change', () => {
+      memorableOpts.separator = sepEl.value as MemorableSeparator;
+      updateGeneratedDisplay();
+    });
+
+    document.getElementById('pw-copy-btn')?.addEventListener('click', () => {
+      void triggerCopy();
+    });
+    document.getElementById('pw-display-box')?.addEventListener('click', () => {
+      void triggerCopy();
+    });
+    document.getElementById('pw-refresh-btn')?.addEventListener('click', () => {
+      updateGeneratedDisplay();
+    });
+  };
+
+  activeToolCleanup = () => {
+    if (copyTimer) {
+      clearTimeout(copyTimer);
+      copyTimer = null;
+    }
+  };
+
+  renderCard();
+}
+
+function mountHash(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  let mode: 'text' | 'file' = 'text';
+  let encoding: HashEncoding = 'hex';
+  let inputText = 'hello world';
+  let hmacKey = '';
+  let expectedHash = '';
+  let fileName = '';
+  let fileBytes: Uint8Array | null = null;
+  let lastResult: HashAllResult | null = null;
+  let bcryptRounds = BCRYPT_ROUNDS_DEFAULT;
+  let bcryptResult: BcryptResult | null = null;
+  let bcryptComputing = false;
+  let bcryptMatchState: 'idle' | 'checking' | 'match' | 'mismatch' = 'idle';
+  let computeSeq = 0;
+  let bcryptSeq = 0;
+  let verifySeq = 0;
+  let bcryptDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+  };
+
+  const syncCliSnippet = () => {
+    const snippetEl = document.getElementById('cli-snippet');
+    if (!snippetEl) return;
+    const origin = window.location.origin;
+    const sample = mode === 'text' ? inputText.slice(0, 120) : 'hello world';
+    const params = new URLSearchParams({ text: sample, format: encoding });
+    if (hmacKey.length > 0) params.set('key', hmacKey);
+    snippetEl.textContent = `curl -s "${origin}/api/hash?${params.toString()}"`;
+  };
+
+  const runBcryptVerify = async () => {
+    const seq = ++verifySeq;
+    const trimmed = expectedHash.trim();
+    if (mode !== 'text' || !isBcryptHash(trimmed)) {
+      bcryptMatchState = 'idle';
+      if (lastResult) renderDigests(lastResult);
+      return;
+    }
+    bcryptMatchState = 'checking';
+    if (lastResult) renderDigests(lastResult);
+    const matched = await verifyBcryptHash(inputText, trimmed);
+    if (seq !== verifySeq) return;
+    bcryptMatchState = matched ? 'match' : 'mismatch';
+    if (lastResult) renderDigests(lastResult);
+  };
+
+  const recomputeBcrypt = async () => {
+    if (mode !== 'text') return;
+    const seq = ++bcryptSeq;
+    bcryptComputing = true;
+    if (lastResult) renderDigests(lastResult);
+    const res = await computeBcryptHash(inputText, bcryptRounds);
+    if (seq !== bcryptSeq) return;
+    bcryptResult = res;
+    bcryptComputing = false;
+    if (lastResult) renderDigests(lastResult);
+  };
+
+  const scheduleBcrypt = (delayMs = 260) => {
+    if (bcryptDebounce) clearTimeout(bcryptDebounce);
+    if (mode !== 'text') return;
+    bcryptDebounce = setTimeout(() => {
+      bcryptDebounce = null;
+      void recomputeBcrypt();
+    }, delayMs);
+  };
+
+  const renderDigests = (result: HashAllResult) => {
+    lastResult = result;
+    const trimmedExpected = expectedHash.trim();
+    const hasExpected = trimmedExpected.length > 0;
+    const expectedIsBcrypt = mode === 'text' && isBcryptHash(trimmedExpected);
+    const matchedAlgo = expectedIsBcrypt ? null : matchExpectedHash(expectedHash, result.digests);
+
+    let verifyBanner = '';
+    if (hasExpected) {
+      if (expectedIsBcrypt) {
+        const rounds = parseBcryptRounds(trimmedExpected);
+        if (bcryptMatchState === 'checking') {
+          verifyBanner = `
+            <div class="rounded-xl border border-[#00ffff]/35 bg-[#00ffff]/10 px-4 py-2.5 flex items-center justify-between gap-3 font-fira text-xs text-[#00ffff]">
+              <span class="font-bold">VERIFYING BCRYPT...</span>
+              <span>Checking against cost ${rounds ?? '?'} hash</span>
+            </div>
+          `;
+        } else if (bcryptMatchState === 'match') {
+          verifyBanner = `
+            <div class="rounded-xl border border-emerald-500/40 bg-emerald-950/25 px-4 py-2.5 flex items-center justify-between gap-3 font-fira text-xs text-emerald-300">
+              <span class="inline-flex items-center gap-2 font-bold">
+                ${renderIconSvg(Check, 14)}
+                <span>MATCH VERIFIED</span>
+              </span>
+              <span>Matches <strong>bcrypt (cost ${rounds ?? '?'})</strong></span>
+            </div>
+          `;
+        } else {
+          verifyBanner = `
+            <div class="rounded-xl border border-rose-500/40 bg-rose-950/25 px-4 py-2.5 flex items-center justify-between gap-3 font-fira text-xs text-rose-300">
+              <span class="inline-flex items-center gap-2 font-bold">
+                ${renderIconSvg(X, 14)}
+                <span>NO MATCH</span>
+              </span>
+              <span>Input does not match the provided bcrypt hash</span>
+            </div>
+          `;
+        }
+      } else if (matchedAlgo) {
+        verifyBanner = `
+          <div class="rounded-xl border border-emerald-500/40 bg-emerald-950/25 px-4 py-2.5 flex items-center justify-between gap-3 font-fira text-xs text-emerald-300">
+            <span class="inline-flex items-center gap-2 font-bold">
+              ${renderIconSvg(Check, 14)}
+              <span>MATCH VERIFIED</span>
+            </span>
+            <span>Matches <strong>${escapeHtml(result.digests.find((d) => d.algorithm === matchedAlgo)?.label ?? matchedAlgo.toUpperCase())}</strong></span>
+          </div>
+        `;
+      } else {
+        verifyBanner = `
+          <div class="rounded-xl border border-rose-500/40 bg-rose-950/25 px-4 py-2.5 flex items-center justify-between gap-3 font-fira text-xs text-rose-300">
+            <span class="inline-flex items-center gap-2 font-bold">
+              ${renderIconSvg(X, 14)}
+              <span>NO MATCH</span>
+            </span>
+            <span>Expected digest does not match any computed algorithm</span>
+          </div>
+        `;
+      }
+    }
+
+    const cardsHtml = result.digests
+      .map((entry) => {
+        const isMatch = matchedAlgo === entry.algorithm;
+        const borderClass = isMatch
+          ? 'border-emerald-400/70 bg-emerald-950/15 shadow-[0_0_20px_rgba(52,211,153,0.12)]'
+          : 'border-white/10 bg-[#050505] hover:border-white/20';
+        const statusBadge =
+          entry.status === 'recommended'
+            ? `<span class="rounded border border-[#00ffff]/30 bg-[#00ffff]/10 px-1.5 py-0.5 font-fira text-[9px] uppercase tracking-wider text-[#00ffff]">Recommended</span>`
+            : `<span class="rounded border border-amber-500/30 bg-amber-950/30 px-1.5 py-0.5 font-fira text-[9px] uppercase tracking-wider text-amber-300">Legacy</span>`;
+        const matchPill = isMatch
+          ? `<span class="rounded border border-emerald-400/50 bg-emerald-500/20 px-1.5 py-0.5 font-fira text-[9px] font-bold uppercase tracking-wider text-emerald-300">MATCH</span>`
+          : '';
+
+        return `
+          <div class="rounded-xl border ${borderClass} p-4 flex flex-col gap-2.5 transition-colors">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-fira text-xs font-bold uppercase tracking-wider text-white">${escapeHtml(entry.label)}</span>
+                <span class="font-fira text-[10px] text-[#777]">${entry.bits}-bit</span>
+                ${statusBadge}
+                ${matchPill}
+              </div>
+              <button
+                type="button"
+                data-copy-hash="${entry.algorithm}"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 transition-colors cursor-pointer"
+              >COPY</button>
+            </div>
+            <code class="block rounded-lg border border-white/8 bg-black/80 px-3 py-2.5 font-fira text-xs sm:text-[13px] text-[#e8e8e8] break-all leading-relaxed select-all">${escapeHtml(entry.digest)}</code>
+          </div>
+        `;
+      })
+      .join('');
+
+    const bcryptBorderClass =
+      expectedIsBcrypt && bcryptMatchState === 'match'
+        ? 'border-emerald-400/70 bg-emerald-950/15 shadow-[0_0_20px_rgba(52,211,153,0.12)]'
+        : 'border-white/10 bg-[#050505] hover:border-white/20';
+
+    const bcryptRoundsOptions = Array.from(
+      { length: BCRYPT_ROUNDS_MAX - BCRYPT_ROUNDS_MIN + 1 },
+      (_, idx) => BCRYPT_ROUNDS_MIN + idx,
+    )
+      .map(
+        (r) =>
+          `<option value="${r}" ${r === bcryptRounds ? 'selected' : ''}>Cost ${r}${r === 10 ? ' (default)' : ''}</option>`,
+      )
+      .join('');
+
+    const bcryptCardHtml =
+      mode === 'text'
+        ? `
+          <div class="rounded-xl border ${bcryptBorderClass} p-4 flex flex-col gap-2.5 transition-colors">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-fira text-xs font-bold uppercase tracking-wider text-white">BCRYPT</span>
+                <span class="font-fira text-[10px] text-[#777]">Password KDF · Salted</span>
+                <span class="rounded border border-[#00ffff]/30 bg-[#00ffff]/10 px-1.5 py-0.5 font-fira text-[9px] uppercase tracking-wider text-[#00ffff]">Recommended</span>
+                ${
+                  expectedIsBcrypt && bcryptMatchState === 'match'
+                    ? `<span class="rounded border border-emerald-400/50 bg-emerald-500/20 px-1.5 py-0.5 font-fira text-[9px] font-bold uppercase tracking-wider text-emerald-300">MATCH</span>`
+                    : ''
+                }
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <select id="hash-bcrypt-rounds" aria-label="bcrypt cost rounds" class="cyber-select !py-1 !pl-2.5 !pr-7 !text-[11px]">
+                  ${bcryptRoundsOptions}
+                </select>
+                <button
+                  id="hash-bcrypt-resalt"
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-black px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer"
+                >RE-SALT</button>
+                <button
+                  id="hash-bcrypt-copy"
+                  type="button"
+                  ${bcryptResult ? '' : 'disabled'}
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 disabled:opacity-40 transition-colors cursor-pointer"
+                >COPY</button>
+              </div>
+            </div>
+            <code class="block rounded-lg border border-white/8 bg-black/80 px-3 py-2.5 font-fira text-xs sm:text-[13px] ${bcryptComputing ? 'text-[#00ffff]/70' : 'text-[#e8e8e8]'} break-all leading-relaxed select-all">${
+              bcryptComputing
+                ? `Computing bcrypt (cost ${bcryptRounds})...`
+                : escapeHtml(bcryptResult?.hash ?? '')
+            }</code>
+            ${
+              bcryptResult?.truncated
+                ? `<p class="font-fira text-[10px] text-amber-300">Note: bcrypt truncates inputs longer than 72 UTF-8 bytes (${bcryptResult.byteLength} bytes entered).</p>`
+                : ''
+            }
+          </div>
+        `
+        : '';
+
+    outputEl.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2 font-fira text-[11px] text-[#858585]">
+        <span>
+          Input: <strong class="text-white">${formatSize(result.byteLength)}</strong>
+          ${mode === 'file' && fileName ? ` · <span class="text-[#00ffff]">${escapeHtml(fileName)}</span>` : ''}
+          ${result.hmac ? ' · <span class="text-[#f3eb2c]">HMAC Mode</span>' : ''}
+        </span>
+        <button
+          id="hash-copy-all-btn"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#050505] px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer"
+        >COPY ALL</button>
+      </div>
+      ${verifyBanner}
+      <div class="flex flex-col gap-3">
+        ${cardsHtml}
+        ${bcryptCardHtml}
+      </div>
+    `;
+
+    outputEl.querySelectorAll<HTMLButtonElement>('[data-copy-hash]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const algo = btn.dataset.copyHash;
+        const entry = result.digests.find((d) => d.algorithm === algo);
+        if (entry) {
+          void copyText(entry.digest, btn, 'COPY');
+        }
+      });
+    });
+
+    const bcryptRoundsEl = document.getElementById('hash-bcrypt-rounds') as HTMLSelectElement | null;
+    bcryptRoundsEl?.addEventListener('change', () => {
+      bcryptRounds = Number(bcryptRoundsEl.value) || BCRYPT_ROUNDS_DEFAULT;
+      void recomputeBcrypt();
+    });
+
+    document.getElementById('hash-bcrypt-resalt')?.addEventListener('click', () => {
+      void recomputeBcrypt();
+    });
+
+    const bcryptCopyBtn = document.getElementById('hash-bcrypt-copy');
+    bcryptCopyBtn?.addEventListener('click', () => {
+      if (bcryptResult) {
+        void copyText(bcryptResult.hash, bcryptCopyBtn, 'COPY');
+      }
+    });
+
+    const copyAllBtn = document.getElementById('hash-copy-all-btn');
+    copyAllBtn?.addEventListener('click', () => {
+      const lines = result.digests.map((d) => `${d.label}: ${d.digest}`);
+      if (mode === 'text' && bcryptResult) {
+        lines.push(`BCRYPT (cost ${bcryptResult.rounds}): ${bcryptResult.hash}`);
+      }
+      void copyText(lines.join('\n'), copyAllBtn, 'COPY ALL');
+    });
+  };
+
+  const recompute = async () => {
+    const seq = ++computeSeq;
+    syncCliSnippet();
+    if (mode === 'file' && !fileBytes) {
+      lastResult = null;
+      outputEl.innerHTML = `
+        <div class="rounded-xl border border-dashed border-white/15 bg-[#050505] p-6 text-center font-fira text-xs text-[#777]">
+          Drop a file above or click to browse. Hashing runs 100% locally in your browser — files are never uploaded.
+        </div>
+      `;
+      return;
+    }
+
+    const payload = mode === 'file' && fileBytes ? fileBytes : inputText;
+    const result = await computeAllHashes(payload, {
+      encoding,
+      key: hmacKey.length > 0 ? hmacKey : undefined,
+    });
+    if (seq !== computeSeq) return;
+    renderDigests(result);
+    if (mode === 'text' && isBcryptHash(expectedHash)) {
+      void runBcryptVerify();
+    }
+  };
+
+  const renderControls = () => {
+    const formats: Array<{ id: HashEncoding; label: string }> = [
+      { id: 'hex', label: 'hex (lower)' },
+      { id: 'HEX', label: 'HEX (UPPER)' },
+      { id: 'base64', label: 'Base64' },
+    ];
+
+    controlsEl.innerHTML = `
+      <div class="flex flex-col gap-4">
+        <!-- Mode & Format Row -->
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div role="tablist" aria-label="Hash input mode" class="inline-flex rounded-lg border border-white/10 bg-black/80 p-1 gap-1">
+            <button
+              type="button"
+              role="tab"
+              data-hash-mode="text"
+              aria-selected="${mode === 'text' ? 'true' : 'false'}"
+              class="rounded-md px-3.5 py-1.5 font-fira text-xs font-semibold transition-colors cursor-pointer ${
+                mode === 'text'
+                  ? 'bg-[#00ffff]/15 text-[#00ffff] border border-[#00ffff]/45'
+                  : 'text-[#888] hover:text-white border border-transparent'
+              }"
+            >Text</button>
+            <button
+              type="button"
+              role="tab"
+              data-hash-mode="file"
+              aria-selected="${mode === 'file' ? 'true' : 'false'}"
+              class="rounded-md px-3.5 py-1.5 font-fira text-xs font-semibold transition-colors cursor-pointer ${
+                mode === 'file'
+                  ? 'bg-[#00ffff]/15 text-[#00ffff] border border-[#00ffff]/45'
+                  : 'text-[#888] hover:text-white border border-transparent'
+              }"
+            >Local File</button>
+          </div>
+
+          <div role="group" aria-label="Output format" class="inline-flex rounded-lg border border-white/10 bg-black/80 p-1 gap-1">
+            ${formats
+              .map(
+                (f) => `
+                  <button
+                    type="button"
+                    data-hash-format="${f.id}"
+                    class="rounded-md px-2.5 py-1.5 font-fira text-[11px] font-semibold transition-colors cursor-pointer ${
+                      encoding === f.id
+                        ? 'bg-[#f3eb2c]/15 text-[#f3eb2c] border border-[#f3eb2c]/45'
+                        : 'text-[#888] hover:text-white border border-transparent'
+                    }"
+                  >${f.label}</button>
+                `,
+              )
+              .join('')}
+          </div>
+        </div>
+
+        <!-- Primary Input (Text or File) -->
+        ${
+          mode === 'text'
+            ? `
+              <div class="flex flex-col gap-1.5">
+                <div class="flex items-center justify-between">
+                  <label for="tool-primary-input" class="font-fira text-[11px] uppercase tracking-[0.16em] text-[#858585]">Input Text</label>
+                  <button id="hash-clear-text" type="button" class="font-fira text-[10px] uppercase tracking-wider text-[#777] hover:text-white cursor-pointer">Clear</button>
+                </div>
+                <textarea
+                  id="tool-primary-input"
+                  rows="4"
+                  placeholder="Enter text to hash..."
+                  spellcheck="false"
+                  class="cyber-input resize-y min-h-[96px] leading-relaxed"
+                >${escapeHtml(inputText)}</textarea>
+              </div>
+            `
+            : `
+              <div class="flex flex-col gap-2">
+                <label
+                  id="hash-dropzone"
+                  for="hash-file-input"
+                  class="rounded-xl border border-dashed border-[#00ffff]/35 bg-[#05080c] hover:border-[#00ffff]/70 hover:bg-[#071018] transition-colors p-6 flex flex-col items-center justify-center gap-2 text-center cursor-pointer"
+                >
+                  <span class="text-[#00ffff]">${renderIconSvg(FileSearch, 24)}</span>
+                  <span class="font-fira text-xs font-semibold text-white">
+                    ${fileName ? escapeHtml(fileName) : 'Drop any file here or click to select'}
+                  </span>
+                  <span class="font-fira text-[10px] text-[#777]">
+                    ${fileBytes ? `${formatSize(fileBytes.byteLength)} loaded in memory` : 'Processed locally in browser memory · Zero upload'}
+                  </span>
+                  <input id="hash-file-input" type="file" class="sr-only" />
+                </label>
+              </div>
+            `
+        }
+
+        <!-- Optional HMAC Key & Verify Hash -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="hash-hmac-key" class="font-fira text-[10px] uppercase tracking-[0.16em] text-[#858585]">HMAC Secret Key (Optional)</label>
+            <input
+              id="hash-hmac-key"
+              type="text"
+              value="${escapeHtml(hmacKey)}"
+              placeholder="Leave blank for standard hash..."
+              autocomplete="off"
+              spellcheck="false"
+              class="cyber-input !py-2 !text-xs"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="hash-verify-input" class="font-fira text-[10px] uppercase tracking-[0.16em] text-[#858585]">Verify / Compare Digest (Optional)</label>
+            <input
+              id="hash-verify-input"
+              type="text"
+              value="${escapeHtml(expectedHash)}"
+              placeholder="Paste expected hash to verify match..."
+              autocomplete="off"
+              spellcheck="false"
+              class="cyber-input !py-2 !text-xs"
+            />
+          </div>
+        </div>
+      </div>
+    `;
+
+    controlsEl.querySelectorAll<HTMLButtonElement>('[data-hash-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.hashMode as 'text' | 'file';
+        if (next === mode) return;
+        mode = next;
+        renderControls();
+        void recompute();
+      });
+    });
+
+    controlsEl.querySelectorAll<HTMLButtonElement>('[data-hash-format]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.dataset.hashFormat as HashEncoding;
+        if (next === encoding) return;
+        encoding = next;
+        renderControls();
+        void recompute();
+      });
+    });
+
+    const textEl = document.getElementById('tool-primary-input') as HTMLTextAreaElement | null;
+    textEl?.addEventListener('input', () => {
+      inputText = textEl.value;
+      void recompute();
+      scheduleBcrypt();
+    });
+
+    document.getElementById('hash-clear-text')?.addEventListener('click', () => {
+      inputText = '';
+      if (textEl) {
+        textEl.value = '';
+        textEl.focus();
+      }
+      void recompute();
+      scheduleBcrypt(0);
+    });
+
+    const loadFile = async (file: File) => {
+      const buf = await file.arrayBuffer();
+      fileName = file.name;
+      fileBytes = new Uint8Array(buf);
+      renderControls();
+      void recompute();
+    };
+
+    const fileInput = document.getElementById('hash-file-input') as HTMLInputElement | null;
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file) void loadFile(file);
+    });
+
+    const dropzone = document.getElementById('hash-dropzone');
+    dropzone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('border-[#f3eb2c]');
+    });
+    dropzone?.addEventListener('dragleave', () => {
+      dropzone.classList.remove('border-[#f3eb2c]');
+    });
+    dropzone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('border-[#f3eb2c]');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) void loadFile(file);
+    });
+
+    const hmacEl = document.getElementById('hash-hmac-key') as HTMLInputElement | null;
+    hmacEl?.addEventListener('input', () => {
+      hmacKey = hmacEl.value;
+      void recompute();
+    });
+
+    const verifyEl = document.getElementById('hash-verify-input') as HTMLInputElement | null;
+    verifyEl?.addEventListener('input', () => {
+      expectedHash = verifyEl.value;
+      if (mode === 'text' && isBcryptHash(expectedHash)) {
+        void runBcryptVerify();
+      } else {
+        bcryptMatchState = 'idle';
+        if (lastResult) {
+          renderDigests(lastResult);
+        }
+      }
+    });
+  };
+
+  activeToolCleanup = () => {
+    if (bcryptDebounce) {
+      clearTimeout(bcryptDebounce);
+      bcryptDebounce = null;
+    }
+  };
+
+  renderControls();
+  void recompute();
+  void recomputeBcrypt();
+}
+
+function mountColor(controlsEl: HTMLElement, outputEl: HTMLElement): void {
+  outputEl.innerHTML = '';
+
+  // Start with crisp neon cyan (#00ffff)
+  let hue = 180;
+  let sat = 100;
+  let val = 100;
+  let alpha = 1;
+
+  const getCurrentRgba = (): RgbaColor => {
+    const rgb = hsvToRgb(hue, sat, val);
+    return { ...rgb, a: Math.round(alpha * 100) / 100 };
+  };
+
+  type EyeDropperCtor = new () => { open: () => Promise<{ sRGBHex: string }> };
+  const eyeDropperCtor = (window as unknown as { EyeDropper?: EyeDropperCtor }).EyeDropper;
+
+  controlsEl.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Left Column: Interactive Picker -->
+      <div class="lg:col-span-6 flex flex-col gap-4">
+        <!-- 2D Saturation / Value Spectrum -->
+        <div
+          id="color-sv-pad"
+          role="slider"
+          tabindex="0"
+          aria-label="Saturation and brightness picker"
+          class="relative w-full h-60 sm:h-64 rounded-xl border border-white/15 overflow-hidden cursor-crosshair select-none touch-none"
+          style="background-color: hsl(180, 100%, 50%);"
+        >
+          <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(to right, #ffffff, rgba(255,255,255,0));"></div>
+          <div class="absolute inset-0 pointer-events-none" style="background: linear-gradient(to top, #000000, rgba(0,0,0,0));"></div>
+          <div
+            id="color-sv-thumb"
+            class="pointer-events-none absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full border-2 border-white shadow-[0_0_0_1.5px_rgba(0,0,0,0.85),0_2px_8px_rgba(0,0,0,0.65)]"
+            style="left: 100%; top: 0%;"
+          ></div>
+        </div>
+
+        <!-- Hue & Alpha Sliders -->
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between font-fira text-[11px]">
+              <label for="color-hue-slider" class="uppercase tracking-[0.16em] text-[#858585]">Hue</label>
+              <span id="color-hue-val" class="text-white font-semibold">180°</span>
+            </div>
+            <input id="color-hue-slider" type="range" min="0" max="360" step="1" value="180" class="color-hue-range" />
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between font-fira text-[11px]">
+              <label for="color-alpha-slider" class="uppercase tracking-[0.16em] text-[#858585]">Alpha</label>
+              <span id="color-alpha-val" class="text-white font-semibold">100%</span>
+            </div>
+            <div class="relative h-[14px] rounded-full overflow-hidden color-checker border border-white/10">
+              <div id="color-alpha-grad" class="pointer-events-none absolute inset-0 rounded-full"></div>
+              <input id="color-alpha-slider" type="range" min="0" max="100" step="1" value="100" class="color-alpha-range relative z-10" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview Swatch + Contrast + Picker Tools -->
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-3">
+          <div class="relative h-20 rounded-xl overflow-hidden border border-white/15 color-checker">
+            <div id="color-preview-fill" class="absolute inset-0 flex items-center justify-between px-4 transition-none">
+              <span id="color-contrast-white" class="rounded-md px-2.5 py-1 font-fira text-[11px] font-bold text-white bg-black/25 backdrop-blur-xs">Aa #FFF</span>
+              <span id="color-contrast-black" class="rounded-md px-2.5 py-1 font-fira text-[11px] font-bold text-black bg-white/25 backdrop-blur-xs">Aa #000</span>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-black px-3 py-1.5 font-fira text-[11px] text-[#e0e0e0] hover:border-[#00ffff]/60 transition-colors cursor-pointer">
+              <input id="color-native-input" type="color" value="#00ffff" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer p-0" />
+              <span>OS Picker</span>
+            </label>
+            ${
+              eyeDropperCtor
+                ? `
+                  <button
+                    id="color-eyedropper-btn"
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black px-3 py-1.5 font-fira text-[11px] text-[#00ffff] hover:border-[#00ffff]/60 transition-colors cursor-pointer"
+                  >
+                    ${renderIconSvg(Pipette, 13)}
+                    <span>Eyedropper</span>
+                  </button>
+                `
+                : ''
+            }
+            <button
+              id="color-random-btn"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-black px-3 py-1.5 font-fira text-[11px] text-[#f3eb2c] hover:border-[#f3eb2c]/60 transition-colors cursor-pointer ml-auto"
+            >
+              ${renderIconSvg(Shuffle, 13)}
+              <span>Random</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Inputs, RGB/HEX/HSL/CSS Outputs, Harmonies -->
+      <div class="lg:col-span-6 flex flex-col gap-4">
+        <!-- Direct Input (HEX / CSS) + RGBA channels -->
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-3.5">
+          <div class="flex flex-col gap-1.5">
+            <label for="tool-primary-input" class="font-fira text-[10px] uppercase tracking-[0.16em] text-[#858585]">HEX or CSS Input (Live)</label>
+            <input
+              id="tool-primary-input"
+              type="text"
+              value="#00FFFF"
+              placeholder="#00ffff, rgb(0, 255, 255), hsl(180, 100%, 50%)"
+              autocomplete="off"
+              spellcheck="false"
+              class="cyber-input !py-2 !text-sm"
+            />
+          </div>
+
+          <div class="grid grid-cols-4 gap-2">
+            <label class="flex flex-col gap-1">
+              <span class="font-fira text-[10px] uppercase tracking-wider text-rose-400">R</span>
+              <input id="color-in-r" type="number" min="0" max="255" value="0" class="cyber-input !px-2.5 !py-1.5 !text-xs text-center" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="font-fira text-[10px] uppercase tracking-wider text-emerald-400">G</span>
+              <input id="color-in-g" type="number" min="0" max="255" value="255" class="cyber-input !px-2.5 !py-1.5 !text-xs text-center" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="font-fira text-[10px] uppercase tracking-wider text-sky-400">B</span>
+              <input id="color-in-b" type="number" min="0" max="255" value="255" class="cyber-input !px-2.5 !py-1.5 !text-xs text-center" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="font-fira text-[10px] uppercase tracking-wider text-[#aaa]">A %</span>
+              <input id="color-in-a" type="number" min="0" max="100" value="100" class="cyber-input !px-2.5 !py-1.5 !text-xs text-center" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Copyable Output Formats -->
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-white/8 bg-black/80 px-3 py-2">
+            <div class="min-w-0">
+              <span class="block font-fira text-[9px] uppercase tracking-[0.18em] text-[#777]">HEX</span>
+              <code id="color-out-hex" class="font-fira text-xs sm:text-sm font-bold text-white select-all">#00FFFF</code>
+            </div>
+            <button type="button" data-copy-color="hex" class="rounded border border-white/15 bg-[#050505] px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer shrink-0">COPY</button>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-white/8 bg-black/80 px-3 py-2">
+            <div class="min-w-0">
+              <span class="block font-fira text-[9px] uppercase tracking-[0.18em] text-[#777]">RGB</span>
+              <code id="color-out-rgb" class="font-fira text-xs sm:text-sm font-semibold text-[#00ffff] select-all">rgb(0, 255, 255)</code>
+            </div>
+            <button type="button" data-copy-color="rgb" class="rounded border border-white/15 bg-[#050505] px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer shrink-0">COPY</button>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-white/8 bg-black/80 px-3 py-2">
+            <div class="min-w-0">
+              <span class="block font-fira text-[9px] uppercase tracking-[0.18em] text-[#777]">HSL</span>
+              <code id="color-out-hsl" class="font-fira text-xs sm:text-sm font-semibold text-[#d8d8d8] select-all">hsl(180, 100%, 50%)</code>
+            </div>
+            <button type="button" data-copy-color="hsl" class="rounded border border-white/15 bg-[#050505] px-2.5 py-1 font-fira text-[10px] uppercase tracking-wider text-[#f3eb2c] hover:border-[#f3eb2c]/60 cursor-pointer shrink-0">COPY</button>
+          </div>
+
+          <div class="rounded-lg border border-white/8 bg-black/80 overflow-hidden">
+            <div class="flex items-center justify-between px-3 py-1.5 border-b border-white/8">
+              <span class="font-fira text-[9px] uppercase tracking-[0.18em] text-[#777]">CSS Snippet</span>
+              <button type="button" data-copy-color="css" class="rounded border border-white/15 bg-[#050505] px-2.5 py-0.5 font-fira text-[10px] uppercase tracking-wider text-[#00ffff] hover:border-[#00ffff]/60 cursor-pointer">COPY CSS</button>
+            </div>
+            <pre id="color-out-css" class="px-3 py-2 font-fira text-xs text-[#d6d6d6] leading-relaxed overflow-x-auto select-all"></pre>
+          </div>
+        </div>
+
+        <!-- Harmony & Shades -->
+        <div class="rounded-xl border border-white/10 bg-[#050505] p-4 flex flex-col gap-2.5">
+          <span class="font-fira text-[10px] uppercase tracking-[0.16em] text-[#858585]">Harmonies &amp; Shades (Click to Select)</span>
+          <div id="color-harmonies" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const svPad = document.getElementById('color-sv-pad')!;
+  const svThumb = document.getElementById('color-sv-thumb')!;
+  const hueSlider = document.getElementById('color-hue-slider') as HTMLInputElement;
+  const hueValEl = document.getElementById('color-hue-val')!;
+  const alphaSlider = document.getElementById('color-alpha-slider') as HTMLInputElement;
+  const alphaValEl = document.getElementById('color-alpha-val')!;
+  const alphaGradEl = document.getElementById('color-alpha-grad')!;
+  const previewFillEl = document.getElementById('color-preview-fill')!;
+  const contrastWhiteEl = document.getElementById('color-contrast-white')!;
+  const contrastBlackEl = document.getElementById('color-contrast-black')!;
+  const nativeInput = document.getElementById('color-native-input') as HTMLInputElement;
+  const primaryInput = document.getElementById('tool-primary-input') as HTMLInputElement;
+  const inR = document.getElementById('color-in-r') as HTMLInputElement;
+  const inG = document.getElementById('color-in-g') as HTMLInputElement;
+  const inB = document.getElementById('color-in-b') as HTMLInputElement;
+  const inA = document.getElementById('color-in-a') as HTMLInputElement;
+  const outHex = document.getElementById('color-out-hex')!;
+  const outRgb = document.getElementById('color-out-rgb')!;
+  const outHsl = document.getElementById('color-out-hsl')!;
+  const outCss = document.getElementById('color-out-css')!;
+  const harmoniesEl = document.getElementById('color-harmonies')!;
+
+  let currentOutputs = formatColorOutputs(getCurrentRgba());
+
+  const syncUI = (skipTarget?: HTMLElement | null) => {
+    const rgba = getCurrentRgba();
+    currentOutputs = formatColorOutputs(rgba);
+
+    // 2D Spectrum & thumb
+    svPad.style.backgroundColor = `hsl(${Math.round(hue)}, 100%, 50%)`;
+    svThumb.style.left = `${sat}%`;
+    svThumb.style.top = `${100 - val}%`;
+    svThumb.style.backgroundColor = rgbaToHex(rgba, false);
+
+    // Sliders
+    hueSlider.value = String(Math.round(hue));
+    hueValEl.textContent = `${Math.round(hue)}°`;
+    const alphaPct = Math.round(alpha * 100);
+    alphaSlider.value = String(alphaPct);
+    alphaValEl.textContent = `${alphaPct}%`;
+    alphaGradEl.style.background = `linear-gradient(to right, rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, 0), rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, 1))`;
+
+    // Preview & WCAG contrast
+    previewFillEl.style.backgroundColor = currentOutputs.rgb;
+    const onWhite = checkContrast({ r: 255, g: 255, b: 255 }, rgba);
+    const onBlack = checkContrast({ r: 0, g: 0, b: 0 }, rgba);
+    contrastWhiteEl.textContent = `Aa #FFF · ${onWhite.ratio}:1 ${onWhite.aaaNormal ? 'AAA' : onWhite.aaNormal ? 'AA' : onWhite.aaLarge ? 'AA+' : 'Fail'}`;
+    contrastBlackEl.textContent = `Aa #000 · ${onBlack.ratio}:1 ${onBlack.aaaNormal ? 'AAA' : onBlack.aaNormal ? 'AA' : onBlack.aaLarge ? 'AA+' : 'Fail'}`;
+
+    // Native input & editable fields
+    nativeInput.value = rgbaToHex(rgba, false);
+    if (skipTarget !== primaryInput) primaryInput.value = currentOutputs.hexUpper;
+    if (skipTarget !== inR) inR.value = String(rgba.r);
+    if (skipTarget !== inG) inG.value = String(rgba.g);
+    if (skipTarget !== inB) inB.value = String(rgba.b);
+    if (skipTarget !== inA) inA.value = String(alphaPct);
+
+    // Output cards
+    outHex.textContent = currentOutputs.hexUpper;
+    outRgb.textContent = currentOutputs.rgb;
+    outHsl.textContent = currentOutputs.hsl;
+    outCss.textContent = currentOutputs.cssSnippet;
+
+    // CLI snippet bar
+    const snippetEl = document.getElementById('cli-snippet');
+    if (snippetEl) {
+      snippetEl.textContent = `/* CSS */ :root { --color-primary: ${currentOutputs.hex}; /* ${currentOutputs.rgb} */ }`;
+    }
+
+    // Harmonies
+    const swatches = buildHarmonyPalette(rgba);
+    harmoniesEl.innerHTML = swatches
+      .map(
+        (sw) => `
+          <button
+            type="button"
+            data-swatch-hex="${sw.hex}"
+            title="${escapeHtml(sw.label)} (${sw.hex})"
+            class="group flex flex-col gap-1 rounded-lg border border-white/10 bg-black/70 p-1.5 hover:border-[#00ffff]/60 transition-colors cursor-pointer text-left"
+          >
+            <span class="block w-full h-8 rounded-md border border-white/10" style="background-color: ${sw.hex};"></span>
+            <span class="font-fira text-[9px] text-[#888] group-hover:text-white truncate">${escapeHtml(sw.label)}</span>
+            <span class="font-fira text-[9px] text-[#aaa] truncate">${sw.hex}</span>
+          </button>
+        `,
+      )
+      .join('');
+
+    harmoniesEl.querySelectorAll<HTMLButtonElement>('[data-swatch-hex]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const parsed = parseColor(btn.dataset.swatchHex ?? '');
+        if (parsed) applyRgba(parsed);
+      });
+    });
+  };
+
+  const applyRgba = (next: RgbaColor, skipTarget?: HTMLElement | null) => {
+    const hsv = rgbToHsv(next.r, next.g, next.b);
+    // Preserve hue when color is pure gray/black/white
+    if (hsv.s > 0 && hsv.v > 0) {
+      hue = hsv.h;
+    }
+    sat = hsv.s;
+    val = hsv.v;
+    alpha = next.a;
+    syncUI(skipTarget);
+  };
+
+  // Pointer drag on 2D Saturation/Value pad
+  const updateFromPointer = (clientX: number, clientY: number) => {
+    const rect = svPad.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    sat = Math.round(x * 1000) / 10;
+    val = Math.round((1 - y) * 1000) / 10;
+    syncUI();
+  };
+
+  let dragging = false;
+  svPad.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    svPad.setPointerCapture(e.pointerId);
+    updateFromPointer(e.clientX, e.clientY);
+  });
+  svPad.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    updateFromPointer(e.clientX, e.clientY);
+  });
+  svPad.addEventListener('pointerup', (e) => {
+    dragging = false;
+    if (svPad.hasPointerCapture(e.pointerId)) {
+      svPad.releasePointerCapture(e.pointerId);
+    }
+  });
+  svPad.addEventListener('pointercancel', () => {
+    dragging = false;
+  });
+
+  hueSlider.addEventListener('input', () => {
+    hue = Number(hueSlider.value);
+    syncUI();
+  });
+
+  alphaSlider.addEventListener('input', () => {
+    alpha = Number(alphaSlider.value) / 100;
+    syncUI();
+  });
+
+  nativeInput.addEventListener('input', () => {
+    const parsed = parseColor(nativeInput.value);
+    if (parsed) applyRgba({ ...parsed, a: alpha });
+  });
+
+  primaryInput.addEventListener('input', () => {
+    const parsed = parseColor(primaryInput.value);
+    if (parsed) {
+      applyRgba(parsed, primaryInput);
+    }
+  });
+
+  const syncFromChannels = (source: HTMLInputElement) => {
+    const r = Number(inR.value);
+    const g = Number(inG.value);
+    const b = Number(inB.value);
+    const aPct = Number(inA.value);
+    if ([r, g, b, aPct].every(Number.isFinite)) {
+      applyRgba({ r, g, b, a: Math.min(100, Math.max(0, aPct)) / 100 }, source);
+    }
+  };
+
+  [inR, inG, inB, inA].forEach((el) => {
+    el.addEventListener('input', () => syncFromChannels(el));
+  });
+
+  document.getElementById('color-random-btn')?.addEventListener('click', () => {
+    const buf = new Uint8Array(3);
+    globalThis.crypto.getRandomValues(buf);
+    applyRgba({ r: buf[0]!, g: buf[1]!, b: buf[2]!, a: 1 });
+  });
+
+  document.getElementById('color-eyedropper-btn')?.addEventListener('click', async () => {
+    if (!eyeDropperCtor) return;
+    try {
+      const picker = new eyeDropperCtor();
+      const picked = await picker.open();
+      const parsed = parseColor(picked.sRGBHex);
+      if (parsed) applyRgba(parsed);
+    } catch {
+      // User cancelled eyedropper
+    }
+  });
+
+  controlsEl.querySelectorAll<HTMLButtonElement>('[data-copy-color]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const kind = btn.dataset.copyColor;
+      if (kind === 'hex') void copyText(currentOutputs.hexUpper, btn, 'COPY');
+      else if (kind === 'rgb') void copyText(currentOutputs.rgb, btn, 'COPY');
+      else if (kind === 'hsl') void copyText(currentOutputs.hsl, btn, 'COPY');
+      else if (kind === 'css') void copyText(currentOutputs.cssSnippet, btn, 'COPY CSS');
+    });
+  });
+
+  syncUI();
+}
+
 // --- NAVIGATION & BOOTSTRAP ---
+
+function getFuzzyMatchedTools(query: string): ToolMeta[] {
+  const q = query.trim();
+  if (!q) return TOOLS;
+
+  const scored = TOOLS.map((t) => ({
+    tool: t,
+    score: scoreFuzzyCandidate(q, { primary: t.name }),
+  }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return scored.map((entry) => entry.tool);
+}
 
 function setPickerOpen(open: boolean): void {
   pickerOpen = open;
@@ -6487,6 +9131,9 @@ function setPickerOpen(open: boolean): void {
   const trigger = document.getElementById('tool-picker-trigger');
   const chevron = document.getElementById('picker-trigger-chevron');
   const hint = document.getElementById('picker-hint');
+  const searchInput = document.getElementById('picker-search-input') as HTMLInputElement | null;
+  const clearBtn = document.getElementById('picker-search-clear');
+  const countEl = document.getElementById('picker-search-count');
   if (!picker || !panel || !trigger) return;
 
   picker.dataset.open = open ? 'true' : 'false';
@@ -6497,6 +9144,20 @@ function setPickerOpen(open: boolean): void {
   if (hint) {
     hint.textContent = open ? 'Close' : 'Select';
   }
+
+  if (open) {
+    // Auto-focus search on pointer-fine desktop devices; avoid forcing mobile soft keyboard
+    if (searchInput && window.matchMedia('(pointer: fine)').matches) {
+      requestAnimationFrame(() => searchInput.focus());
+    }
+  } else if (pickerQuery) {
+    pickerQuery = '';
+    pickerHighlightIdx = 0;
+    if (searchInput) searchInput.value = '';
+    clearBtn?.classList.add('hidden');
+    if (countEl) countEl.textContent = '';
+    renderToolOptions();
+  }
 }
 
 function updatePickerTrigger(tool: ToolMeta): void {
@@ -6506,17 +9167,23 @@ function updatePickerTrigger(tool: ToolMeta): void {
   if (titleEl) titleEl.textContent = tool.name;
 }
 
-function renderDropdownOption(t: ToolMeta): string {
+function renderDropdownOption(
+  t: ToolMeta,
+  options: { showCategory?: boolean; highlighted?: boolean } = {},
+): string {
   const isActive = t.id === activeTool;
-  const activeCheck = isActive
-    ? `<span class="ml-auto text-[#f3eb2c] shrink-0">${renderIconSvg(Check, 14)}</span>`
-    : '';
+  const cat = TOOL_CATEGORIES.find((c) => c.id === t.category);
+  const catBadge =
+    options.showCategory && cat
+      ? `<span class="ml-auto font-fira text-[9px] uppercase tracking-wider text-[#777] shrink-0">${escapeHtml(cat.shortLabel)}</span>`
+      : '';
   return `
     <button
       type="button"
       role="option"
       data-tool-id="${t.id}"
       data-active="${isActive ? 'true' : 'false'}"
+      data-highlighted="${options.highlighted ? 'true' : 'false'}"
       aria-selected="${isActive ? 'true' : 'false'}"
       class="cyber-dropdown-item"
     >
@@ -6524,30 +9191,63 @@ function renderDropdownOption(t: ToolMeta): string {
       <span class="min-w-0 flex-1">
         <span class="cyber-dropdown-title block font-fira text-xs font-semibold text-[#d0d0d0] truncate">${escapeHtml(t.name)}</span>
       </span>
-      ${activeCheck}
+      ${catBadge}
     </button>
   `;
 }
 
 function renderToolOptions(): void {
   const container = document.getElementById('tool-options')!;
+  const countEl = document.getElementById('picker-search-count');
+  const q = pickerQuery.trim();
 
-  container.innerHTML = TOOL_CATEGORIES.map((cat) => {
-    const catTools = TOOLS.filter((t) => t.category === cat.id);
-    return `
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 px-0.5">
-          <span class="text-[#00ffff]/85">${renderIconSvg(cat.icon, 12)}</span>
-          <span class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#00ffff]/85">${escapeHtml(cat.label)}</span>
-          <span class="h-px flex-1 bg-white/8"></span>
-          <span class="font-fira text-[10px] text-[#666]">${catTools.length}</span>
+  if (q.length > 0) {
+    const matches = getFuzzyMatchedTools(q);
+    if (pickerHighlightIdx >= matches.length) pickerHighlightIdx = 0;
+    if (countEl) {
+      countEl.textContent = `${matches.length}`;
+    }
+
+    if (matches.length === 0) {
+      container.innerHTML = `
+        <div class="rounded-lg border border-white/10 bg-black/60 px-4 py-5 text-center font-fira text-xs text-[#858585]">
+          No tools matching <span class="text-[#f3eb2c]">"${escapeHtml(q)}"</span>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-          ${catTools.map((t) => renderDropdownOption(t)).join('')}
-        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+        ${matches
+          .map((t, idx) =>
+            renderDropdownOption(t, {
+              showCategory: true,
+              highlighted: idx === pickerHighlightIdx,
+            }),
+          )
+          .join('')}
       </div>
     `;
-  }).join('');
+  } else {
+    if (countEl) countEl.textContent = '';
+    container.innerHTML = TOOL_CATEGORIES.map((cat) => {
+      const catTools = TOOLS.filter((t) => t.category === cat.id);
+      return `
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-2 px-0.5">
+            <span class="text-[#00ffff]/85">${renderIconSvg(cat.icon, 12)}</span>
+            <span class="font-fira text-[10px] font-bold uppercase tracking-[0.2em] text-[#00ffff]/85">${escapeHtml(cat.label)}</span>
+            <span class="h-px flex-1 bg-white/8"></span>
+            <span class="font-fira text-[10px] text-[#666]">${catTools.length}</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+            ${catTools.map((t) => renderDropdownOption(t)).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
 
   container.querySelectorAll<HTMLButtonElement>('[data-tool-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -6566,7 +9266,7 @@ function updateCliSnippet(tool: ToolMeta): void {
   snippetEl.textContent = tool.cliTemplate(window.location.origin, visitorIp);
 }
 
-function selectTool(id: ToolId, updateHash = false): void {
+function selectTool(id: ToolId, updateHash = false, initialTab?: string): void {
   activeAbort?.abort();
   activeAbort = null;
   activeSpeedCleanup?.();
@@ -6612,9 +9312,25 @@ function selectTool(id: ToolId, updateHash = false): void {
     });
   });
 
+  const resetSubTool = () => {
+    activeAbort?.abort();
+    activeAbort = null;
+    activeToolCleanup?.();
+    activeToolCleanup = null;
+  };
+
   switch (id) {
     case 'myip':
-      mountMyIp(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'myip', label: 'My IP & Headers', mount: mountMyIp },
+          { id: 'geo', label: 'Lookup Any IP / Domain', mount: mountGeo },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
     case 'ping':
       mountPing(controlsEl, outputEl);
@@ -6623,7 +9339,16 @@ function selectTool(id: ToolId, updateHash = false): void {
       mountTraceroute(controlsEl, outputEl);
       break;
     case 'dns':
-      mountDns(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'dns', label: 'Forward DNS', mount: mountDns },
+          { id: 'reverse', label: 'Reverse DNS / FCrDNS', mount: mountReverse },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
     case 'propagation':
       mountPropagation(controlsEl, outputEl);
@@ -6634,8 +9359,8 @@ function selectTool(id: ToolId, updateHash = false): void {
     case 'port':
       mountPort(controlsEl, outputEl);
       break;
-    case 'reverse':
-      mountReverse(controlsEl, outputEl);
+    case 'mac':
+      mountMacTool(controlsEl, outputEl);
       break;
     case 'proxy':
       mountProxy(controlsEl, outputEl);
@@ -6644,16 +9369,41 @@ function selectTool(id: ToolId, updateHash = false): void {
       mountRbl(controlsEl, outputEl);
       break;
     case 'spf':
-      mountSpf(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'spf', label: 'SPF Policy Tester', mount: mountSpf },
+          { id: 'dmarc', label: 'DMARC & DKIM', mount: mountDmarcDkimTool },
+          { id: 'smtp', label: 'SMTP Banner / EHLO', mount: mountSmtpTool },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
-    case 'geo':
-      mountGeo(controlsEl, outputEl);
+    case 'tls':
+      mountTlsTool(controlsEl, outputEl);
+      break;
+    case 'headers':
+      mountHeadersTool(controlsEl, outputEl);
+      break;
+    case 'jwt':
+      mountJwtTool(controlsEl, outputEl);
       break;
     case 'bandwidth':
       mountBandwidth(controlsEl, outputEl);
       break;
     case 'subnet':
-      mountSubnet(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'subnet', label: 'Subnet / CIDR', mount: mountSubnet },
+          { id: 'ipv4to6', label: 'IPv4 ↔ IPv6', mount: mountIpv4ToIpv6 },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
     case 'sla':
       mountSla(controlsEl, outputEl);
@@ -6665,16 +9415,31 @@ function selectTool(id: ToolId, updateHash = false): void {
       mountDays(controlsEl, outputEl);
       break;
     case 'jsonsort':
-      mountJsonSort(controlsEl, outputEl);
-      break;
-    case 'xml2json':
-      mountXmlToJson(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'sort', label: 'Format & Sort', mount: mountJsonSort },
+          { id: 'browser', label: 'Tree Browser', mount: mountJsonBrowser },
+          { id: 'convert', label: 'Data Converter', mount: mountDataConvertTool },
+          { id: 'xml', label: 'XML → JSON', mount: mountXmlToJson },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
     case 'base64':
-      mountBase64(controlsEl, outputEl);
-      break;
-    case 'url':
-      mountUrl(controlsEl, outputEl);
+      mountTabbedTool(
+        controlsEl,
+        outputEl,
+        [
+          { id: 'base64', label: 'Base64', mount: mountBase64 },
+          { id: 'url', label: 'URL & Query Inspector', mount: mountUrl },
+          { id: 'htmlhex', label: 'HTML Entities & Hex', mount: mountHtmlHexTool },
+        ],
+        initialTab,
+        resetSubTool,
+      );
       break;
     case 'cron':
       mountCron(controlsEl, outputEl);
@@ -6682,11 +9447,20 @@ function selectTool(id: ToolId, updateHash = false): void {
     case 'regex':
       mountRegex(controlsEl, outputEl);
       break;
+    case 'diff':
+      mountDiffTool(controlsEl, outputEl);
+      break;
+    case 'uuid':
+      mountUuidTool(controlsEl, outputEl);
+      break;
+    case 'chmod':
+      mountChmodTool(controlsEl, outputEl);
+      break;
+    case 'markdown':
+      mountMarkdownTool(controlsEl, outputEl);
+      break;
     case 'ascii':
       mountAscii(controlsEl, outputEl);
-      break;
-    case 'ipv4to6':
-      mountIpv4ToIpv6(controlsEl, outputEl);
       break;
     case 'units':
       mountUnits(controlsEl, outputEl);
@@ -6696,6 +9470,24 @@ function selectTool(id: ToolId, updateHash = false): void {
       break;
     case 'irishtax':
       mountIrishTax(controlsEl, outputEl);
+      break;
+    case 'soil':
+      mountSoil(controlsEl, outputEl);
+      break;
+    case 'paint':
+      mountPaintTool(controlsEl, outputEl);
+      break;
+    case 'password':
+      mountPassword(controlsEl, outputEl);
+      break;
+    case 'hash':
+      mountHash(controlsEl, outputEl);
+      break;
+    case 'color':
+      mountColor(controlsEl, outputEl);
+      break;
+    case 'image':
+      activeToolCleanup = mountImageTool(controlsEl, outputEl);
       break;
   }
 }
@@ -6913,13 +9705,82 @@ function setupNavigationControls(): void {
   const picker = document.getElementById('tool-picker');
   const trigger = document.getElementById('tool-picker-trigger');
   const chevron = document.getElementById('picker-trigger-chevron');
+  const searchIcon = document.getElementById('picker-search-icon');
+  const searchInput = document.getElementById('picker-search-input') as HTMLInputElement | null;
+  const clearBtn = document.getElementById('picker-search-clear');
+
   if (chevron) {
     chevron.innerHTML = renderIconSvg(ChevronDown, 14);
+  }
+  if (searchIcon) {
+    searchIcon.innerHTML = renderIconSvg(Search, 14);
+  }
+  if (clearBtn) {
+    clearBtn.innerHTML = renderIconSvg(X, 13);
   }
 
   trigger?.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation();
     setPickerOpen(!pickerOpen);
+  });
+
+  const syncSearch = (val: string) => {
+    pickerQuery = val;
+    pickerHighlightIdx = 0;
+    clearBtn?.classList.toggle('hidden', val.trim().length === 0);
+    renderToolOptions();
+  };
+
+  searchInput?.addEventListener('input', () => {
+    syncSearch(searchInput.value);
+  });
+
+  searchInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+    const q = pickerQuery.trim();
+    if (e.key === 'ArrowDown' && q.length > 0) {
+      const matches = getFuzzyMatchedTools(q);
+      if (matches.length > 0) {
+        e.preventDefault();
+        pickerHighlightIdx = (pickerHighlightIdx + 1) % matches.length;
+        renderToolOptions();
+      }
+    } else if (e.key === 'ArrowUp' && q.length > 0) {
+      const matches = getFuzzyMatchedTools(q);
+      if (matches.length > 0) {
+        e.preventDefault();
+        pickerHighlightIdx = (pickerHighlightIdx - 1 + matches.length) % matches.length;
+        renderToolOptions();
+      }
+    } else if (e.key === 'Enter' && q.length > 0) {
+      const matches = getFuzzyMatchedTools(q);
+      const chosen = matches[pickerHighlightIdx] ?? matches[0];
+      if (chosen) {
+        e.preventDefault();
+        if (chosen.id !== activeTool) {
+          selectTool(chosen.id, true);
+        }
+        setPickerOpen(false);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pickerQuery.length > 0) {
+        searchInput.value = '';
+        syncSearch('');
+      } else {
+        setPickerOpen(false);
+        trigger?.focus();
+      }
+    }
+  });
+
+  clearBtn?.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation();
+    if (searchInput) {
+      searchInput.value = '';
+      searchInput.focus();
+    }
+    syncSearch('');
   });
 
   document.addEventListener('click', (e: MouseEvent) => {
@@ -6938,12 +9799,19 @@ function setupNavigationControls(): void {
   });
 }
 
+function resolveHashTarget(rawHash: string): { tool: ToolId; tab?: string } {
+  const key = rawHash.replace(/^#/, '');
+  const alias = TOOL_HASH_ALIASES[key];
+  if (alias) return alias;
+  if (TOOLS.some((t) => t.id === key)) return { tool: key as ToolId };
+  return { tool: 'myip' };
+}
+
 function init(): void {
   setupParentResizeSync();
   setupEmbeddedSearch();
   setupNavigationControls();
-  const hashTool = window.location.hash.replace(/^#/, '') as ToolId;
-  const initialTool: ToolId = TOOLS.some((t) => t.id === hashTool) ? hashTool : 'myip';
+  const initial = resolveHashTarget(window.location.hash);
 
   // Wire up CLI copy
   const copyCliBtn = document.getElementById('copy-cli-btn')!;
@@ -6954,9 +9822,9 @@ function init(): void {
   });
 
   window.addEventListener('hashchange', () => {
-    const next = window.location.hash.replace(/^#/, '') as ToolId;
-    if (TOOLS.some((t) => t.id === next) && next !== activeTool) {
-      selectTool(next, false);
+    const next = resolveHashTarget(window.location.hash);
+    if (next.tool !== activeTool || next.tab) {
+      selectTool(next.tool, false, next.tab);
     }
   });
 
@@ -6964,8 +9832,12 @@ function init(): void {
   void Network;
   void Check;
   void Copy;
+  void ArrowDownAZ;
+  void EthernetPort;
+  void Globe;
+  void Link2;
 
-  selectTool(initialTool, false);
+  selectTool(initial.tool, false, initial.tab);
   void hydrateVisitorIp();
 }
 

@@ -127,3 +127,63 @@ export function decodeBase64Utf8(raw: string): { text: string; byteLength: numbe
   const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
   return { text, byteLength: bytes.length };
 }
+
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+const HTML_UNESCAPE_MAP: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+};
+
+export function encodeHtmlEntities(raw: string): string {
+  return raw.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch] ?? ch);
+}
+
+export function decodeHtmlEntities(raw: string): string {
+  return raw.replace(/&(?:#x([0-9a-fA-F]+)|#(\d+)|([a-zA-Z]+));/g, (full, hex?: string, dec?: string, named?: string) => {
+    if (hex) {
+      const cp = parseInt(hex, 16);
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : full;
+    }
+    if (dec) {
+      const cp = parseInt(dec, 10);
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : full;
+    }
+    if (named) {
+      return HTML_UNESCAPE_MAP[named.toLowerCase()] ?? full;
+    }
+    return full;
+  });
+}
+
+export function encodeHexUtf8(raw: string, spaced = false): string {
+  const bytes = new TextEncoder().encode(raw);
+  const parts = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+  return parts.join(spaced ? ' ' : '');
+}
+
+export function decodeHexUtf8(raw: string): { text: string; byteLength: number } {
+  const cleaned = raw.trim().replace(/^0x/i, '').replace(/[\s:,-]+/g, '');
+  if (!cleaned) return { text: '', byteLength: 0 };
+  if (cleaned.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(cleaned)) {
+    throw new Error('Invalid hex string (must contain an even number of 0-9 / a-f characters).');
+  }
+  const bytes = new Uint8Array(cleaned.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(cleaned.slice(i * 2, i * 2 + 2), 16);
+  }
+  return {
+    text: new TextDecoder('utf-8', { fatal: false }).decode(bytes),
+    byteLength: bytes.length,
+  };
+}

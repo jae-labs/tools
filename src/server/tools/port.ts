@@ -1,4 +1,5 @@
 import net from 'node:net';
+import { MAX_PORTS_PER_SCAN } from '../../shared/ports.ts';
 import { isPublicIp, normalizeIp, resolvePublicTarget, type IpFamily } from '../ip.ts';
 import type { GeoInfo } from '../geo.ts';
 import { performReverseLookup } from './dns.ts';
@@ -15,16 +16,28 @@ export const COMMON_PORTS: Record<number, string> = {
   443: 'HTTPS',
   465: 'SMTPS',
   587: 'Submission',
+  853: 'DNS-over-TLS',
   993: 'IMAPS',
   995: 'POP3S',
   1080: 'SOCKS',
+  1433: 'MSSQL',
+  2375: 'Docker',
+  2376: 'Docker TLS',
+  3000: 'Dev / HTTP',
   3128: 'Squid Proxy',
   3306: 'MySQL',
+  3389: 'RDP',
+  5173: 'Vite Dev',
   5432: 'PostgreSQL',
+  5900: 'VNC',
   6379: 'Redis',
+  8000: 'HTTP-Alt',
   8080: 'HTTP-Alt',
   8443: 'HTTPS-Alt',
   8888: 'HTTP-Proxy',
+  9000: 'App / PHP-FPM',
+  9090: 'Prometheus',
+  27017: 'MongoDB',
 };
 
 export interface SinglePortResult {
@@ -138,14 +151,24 @@ export async function performPortCheck(
 
   const uniquePorts = Array.from(
     new Set(ports.filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535)),
-  ).slice(0, 16);
+  ).slice(0, MAX_PORTS_PER_SCAN);
 
   if (uniquePorts.length === 0) {
     throw new Error('Provide at least one valid TCP port (1–65535).');
   }
 
-  const results = await Promise.all(
-    uniquePorts.map((port) => probeTcpPort(target.ip, port, timeoutMs)),
+  const results: SinglePortResult[] = new Array<SinglePortResult>(uniquePorts.length);
+  const concurrency = Math.min(16, uniquePorts.length);
+  let cursor = 0;
+
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (true) {
+        const index = cursor++;
+        if (index >= uniquePorts.length) break;
+        results[index] = await probeTcpPort(target.ip, uniquePorts[index], timeoutMs);
+      }
+    }),
   );
 
   return {

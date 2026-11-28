@@ -88,6 +88,7 @@
 
   .hero-cta-primary {
     --cta-border: #f3eb2c;
+    color: #000000;
     background: linear-gradient(135deg, #f8ef45 0%, #efe118 100%);
     box-shadow: 0 0 26px rgba(243, 235, 44, 0.22);
   }
@@ -138,8 +139,159 @@
     @apply text-white;
   }
 
+  .cyber-dropdown-item[data-highlighted="true"] {
+    @apply border-[#00ffff]/70 bg-[#00ffff]/12 shadow-[0_0_16px_rgba(0,255,255,0.14)];
+  }
+
   .cyber-range {
     @apply w-full h-1.5 rounded-full appearance-none bg-white/15 cursor-pointer accent-[#f3eb2c] disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .pw-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      #00ffff 0%,
+      #00ffff var(--slider-pct, 50%),
+      rgba(255, 255, 255, 0.2) var(--slider-pct, 50%),
+      rgba(255, 255, 255, 0.2) 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+
+  .pw-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 2px solid #00ffff;
+    box-shadow: 0 0 12px rgba(0, 255, 255, 0.35);
+    cursor: pointer;
+    transition: transform 140ms ease, box-shadow 140ms ease;
+  }
+
+  .pw-range::-webkit-slider-thumb:hover {
+    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(0, 255, 255, 0.55);
+  }
+
+  .pw-range::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 2px solid #00ffff;
+    box-shadow: 0 0 12px rgba(0, 255, 255, 0.35);
+    cursor: pointer;
+    transition: transform 140ms ease, box-shadow 140ms ease;
+  }
+
+  .pw-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 44px;
+    height: 24px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .pw-toggle[aria-checked="true"] {
+    background: #00b8d4;
+    border-color: #00ffff;
+    box-shadow: 0 0 14px rgba(0, 255, 255, 0.28);
+  }
+
+  .pw-toggle-knob {
+    position: absolute;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    transition: transform 160ms ease;
+  }
+
+  .pw-toggle[aria-checked="true"] .pw-toggle-knob {
+    transform: translateX(20px);
+  }
+
+  .color-checker {
+    background-image:
+      linear-gradient(45deg, #1b1f27 25%, transparent 25%),
+      linear-gradient(-45deg, #1b1f27 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1b1f27 75%),
+      linear-gradient(-45deg, transparent 75%, #1b1f27 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    background-color: #0b0e13;
+  }
+
+  .color-hue-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      #ff0000 0%,
+      #ffff00 17%,
+      #00ff00 33%,
+      #00ffff 50%,
+      #0000ff 67%,
+      #ff00ff 83%,
+      #ff0000 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+
+  .color-alpha-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    border-radius: 9999px;
+    background-color: transparent;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .color-hue-range::-webkit-slider-thumb,
+  .color-alpha-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 2px solid #050505;
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 2px 6px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
+
+  .color-hue-range::-moz-range-thumb,
+  .color-alpha-range::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    background: #ffffff;
+    border: 2px solid #050505;
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 2px 6px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
   }
 
   .no-scrollbar {

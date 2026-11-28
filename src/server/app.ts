@@ -16,6 +16,27 @@ import {
   calculateIrishTax2026,
   type FilingStatus,
 } from '../shared/irishtax.ts';
+import {
+  BCRYPT_ROUNDS_DEFAULT,
+  BCRYPT_ROUNDS_MIN,
+  HASH_ALGORITHMS,
+  computeAllHashes,
+  computeBcryptHash,
+  isBcryptHash,
+  parseBcryptRounds,
+  verifyBcryptHash,
+  type HashAlgorithm,
+  type HashEncoding,
+} from '../shared/hash.ts';
+import { generateIds, type IdKind } from '../shared/idgen.ts';
+import {
+  DEFAULT_MEMORABLE_OPTIONS,
+  DEFAULT_PIN_OPTIONS,
+  DEFAULT_RANDOM_OPTIONS,
+  generatePassword,
+  type MemorableSeparator,
+  type PasswordType,
+} from '../shared/password.ts';
 import { calculateSubnet } from '../shared/subnet.ts';
 import { createGeoLookup, type GeoInfo } from './geo.ts';
 import { extractClientIp, normalizeIp, resolvePublicTarget } from './ip.ts';
@@ -30,6 +51,16 @@ import {
   isAllowedResponseStatus,
   normalizeChannelId,
 } from './tools/webhook.ts';
+import { performDkimLookup, performDmarcLookup } from './tools/emailauth.ts';
+import { performHttpHeaderInspect } from './tools/headers.ts';
+import {
+  bulkLookupMacs,
+  looksLikeMacInput,
+  lookupMacVendor,
+  searchMacByVendor,
+} from './tools/mac.ts';
+import { performSmtpProbe } from './tools/smtp.ts';
+import { performTlsInspect } from './tools/tls.ts';
 import { performWhoisLookup } from './tools/whois.ts';
 
 export interface StaticAssetResult {
@@ -808,6 +839,183 @@ export function createApp(options: AppOptions = {}) {
               { year: 2026, inputs, result: calculateIrishTax2026(inputs) },
               { headers: JSON_HEADERS },
             );
+          }
+
+          if (pathname === '/api/password') {
+            const typeRaw = (url.searchParams.get('type') ?? 'random').toLowerCase();
+            const type: PasswordType =
+              typeRaw === 'memorable' || typeRaw === 'pin' ? typeRaw : 'random';
+            const parseBool = (key: string, fallback: boolean): boolean => {
+              const raw = url.searchParams.get(key);
+              if (raw === null) return fallback;
+              const lower = raw.trim().toLowerCase();
+              if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+              if (lower === 'false' || lower === '0' || lower === 'no') return false;
+              return fallback;
+            };
+            const parseNum = (key: string, fallback: number): number => {
+              const raw = url.searchParams.get(key);
+              if (raw === null || raw.trim() === '') return fallback;
+              const parsed = Number(raw);
+              return Number.isFinite(parsed) ? parsed : fallback;
+            };
+
+            const sepRaw = (url.searchParams.get('separator') ?? DEFAULT_MEMORABLE_OPTIONS.separator).toLowerCase();
+            const validSeps = new Set<MemorableSeparator>(['hyphen', 'space', 'period', 'underscore', 'none']);
+            const separator: MemorableSeparator = validSeps.has(sepRaw as MemorableSeparator)
+              ? (sepRaw as MemorableSeparator)
+              : DEFAULT_MEMORABLE_OPTIONS.separator;
+
+            const result = generatePassword({
+              type,
+              random: {
+                length: parseNum('length', DEFAULT_RANDOM_OPTIONS.length),
+                numbers: parseBool('numbers', DEFAULT_RANDOM_OPTIONS.numbers),
+                symbols: parseBool('symbols', DEFAULT_RANDOM_OPTIONS.symbols),
+              },
+              memorable: {
+                words: parseNum('words', DEFAULT_MEMORABLE_OPTIONS.words),
+                separator,
+                capitalize: parseBool('capitalize', DEFAULT_MEMORABLE_OPTIONS.capitalize),
+                includeNumber: parseBool('includeNumber', DEFAULT_MEMORABLE_OPTIONS.includeNumber),
+              },
+              pin: {
+                length: parseNum('length', DEFAULT_PIN_OPTIONS.length),
+              },
+            });
+
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/hash') {
+            const text = url.searchParams.get('text') ?? '';
+            const key = url.searchParams.get('key') ?? undefined;
+            const formatRaw = url.searchParams.get('format') ?? 'hex';
+            const encoding: HashEncoding =
+              formatRaw === 'HEX' || formatRaw === 'base64' ? formatRaw : 'hex';
+            const algoRaw = (url.searchParams.get('algo') ?? 'all').toLowerCase();
+
+            if (algoRaw === 'bcrypt') {
+              const verifyParam = url.searchParams.get('verify');
+              if (verifyParam !== null && verifyParam.trim() !== '') {
+                const validFormat = isBcryptHash(verifyParam);
+                const match = validFormat ? await verifyBcryptHash(text, verifyParam) : false;
+                return Response.json(
+                  {
+                    algorithm: 'bcrypt',
+                    validFormat,
+                    match,
+                    rounds: parseBcryptRounds(verifyParam),
+                  },
+                  { headers: JSON_HEADERS },
+                );
+              }
+
+              const roundsRaw = url.searchParams.get('rounds');
+              const parsedRounds = roundsRaw !== null && roundsRaw.trim() !== '' ? Number(roundsRaw) : BCRYPT_ROUNDS_DEFAULT;
+              // Cap server-side bcrypt cost at 12 to prevent CPU exhaustion
+              const serverRounds = Number.isFinite(parsedRounds)
+                ? Math.min(12, Math.max(BCRYPT_ROUNDS_MIN, Math.round(parsedRounds)))
+                : BCRYPT_ROUNDS_DEFAULT;
+              const bcryptRes = await computeBcryptHash(text, serverRounds);
+              return Response.json(bcryptRes, { headers: JSON_HEADERS });
+            }
+
+            const result = await computeAllHashes(text, { encoding, key });
+            if (algoRaw !== 'all') {
+              const validAlgos = new Set<HashAlgorithm>(HASH_ALGORITHMS.map((a) => a.id));
+              if (!validAlgos.has(algoRaw as HashAlgorithm)) {
+                return errorJson(
+                  `Unsupported algorithm "${algoRaw}". Use one of: all, md5, sha1, sha256, sha384, sha512, bcrypt.`,
+                  400,
+                );
+              }
+              const match = result.digests.find((d) => d.algorithm === algoRaw);
+              return Response.json(
+                {
+                  byteLength: result.byteLength,
+                  encoding: result.encoding,
+                  hmac: result.hmac,
+                  ...match,
+                },
+                { headers: JSON_HEADERS },
+              );
+            }
+
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/tls') {
+            const host = url.searchParams.get('host') ?? '';
+            const portRaw = url.searchParams.get('port');
+            const port = portRaw && Number.isFinite(Number(portRaw)) ? Number(portRaw) : 443;
+            const result = await performTlsInspect(host, port);
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/headers') {
+            const targetUrl = url.searchParams.get('url') ?? '';
+            const result = await performHttpHeaderInspect(targetUrl, fetchFn);
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/dmarc') {
+            const domain = url.searchParams.get('domain') ?? '';
+            const result = await performDmarcLookup(domain);
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/dkim') {
+            const domain = url.searchParams.get('domain') ?? '';
+            const selector = url.searchParams.get('selector') ?? 'default';
+            const result = await performDkimLookup(domain, selector);
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/smtp') {
+            const host = url.searchParams.get('host') ?? '';
+            const portRaw = url.searchParams.get('port');
+            const port = portRaw && Number.isFinite(Number(portRaw)) ? Number(portRaw) : 587;
+            const result = await performSmtpProbe(host, port);
+            return Response.json(result, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/id') {
+            const typeRaw = (url.searchParams.get('type') ?? 'uuidv4').toLowerCase();
+            const kind: IdKind =
+              typeRaw === 'uuidv7' || typeRaw === 'ulid' || typeRaw === 'nanoid' ? typeRaw : 'uuidv4';
+            const countRaw = Number(url.searchParams.get('count') ?? '5');
+            const lengthRaw = Number(url.searchParams.get('length') ?? '21');
+            const ids = generateIds(kind, countRaw, lengthRaw);
+            return Response.json({ type: kind, count: ids.length, ids }, { headers: JSON_HEADERS });
+          }
+
+          if (pathname === '/api/mac') {
+            const bulkParam = url.searchParams.get('bulk');
+            if (bulkParam !== null && bulkParam.trim() !== '') {
+              const results = bulkLookupMacs(bulkParam);
+              return Response.json({ count: results.length, results }, { headers: JSON_HEADERS });
+            }
+
+            const vendorParam = url.searchParams.get('vendor');
+            const limitParam = Number(url.searchParams.get('limit') ?? '50');
+            if (vendorParam !== null && vendorParam.trim() !== '') {
+              return Response.json(searchMacByVendor(vendorParam, limitParam), { headers: JSON_HEADERS });
+            }
+
+            const macParam = url.searchParams.get('mac');
+            if (macParam !== null && macParam.trim() !== '') {
+              return Response.json(lookupMacVendor(macParam), { headers: JSON_HEADERS });
+            }
+
+            const q = url.searchParams.get('q') ?? '';
+            if (!q.trim()) {
+              return errorJson('Provide ?mac=..., ?vendor=..., ?bulk=..., or ?q=...', 400);
+            }
+            if (looksLikeMacInput(q)) {
+              return Response.json(lookupMacVendor(q), { headers: JSON_HEADERS });
+            }
+            return Response.json(searchMacByVendor(q, limitParam), { headers: JSON_HEADERS });
           }
 
           return errorJson(`Unknown API endpoint: ${pathname}`, 404);

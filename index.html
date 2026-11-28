@@ -50,8 +50,28 @@
             id="tool-picker-panel"
             role="region"
             aria-label="Tools List"
-            class="hidden w-full mt-2 flex-col rounded-xl border border-[#00ffff]/40 bg-[#040608]/95 backdrop-blur-md p-3.5 sm:p-4 shadow-[0_0_28px_rgba(0,255,255,0.12)]"
+            class="hidden w-full mt-2 flex-col gap-3.5 rounded-xl border border-[#00ffff]/40 bg-[#040608]/95 backdrop-blur-md p-3.5 sm:p-4 shadow-[0_0_28px_rgba(0,255,255,0.12)]"
           >
+            <div class="relative flex items-center">
+              <span id="picker-search-icon" class="pointer-events-none absolute left-3 text-[#666] inline-flex"></span>
+              <input
+                id="picker-search-input"
+                type="text"
+                placeholder="Fuzzy search tools... (e.g. jsbr, tax, port, soil)"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Fuzzy search tools"
+                class="w-full rounded-lg border border-white/15 bg-black/85 pl-9 pr-16 py-2 font-fira text-xs text-white placeholder-[#666] outline-none transition-colors focus:border-[#00ffff]/70 focus:shadow-[0_0_14px_rgba(0,255,255,0.14)]"
+              />
+              <span id="picker-search-count" class="pointer-events-none absolute right-8 font-fira text-[10px] text-[#00ffff]"></span>
+              <button
+                id="picker-search-clear"
+                type="button"
+                aria-label="Clear search"
+                class="hidden absolute right-2 p-1 text-[#858585] hover:text-white cursor-pointer"
+              ></button>
+            </div>
+
             <div
               id="tool-options"
               role="listbox"
