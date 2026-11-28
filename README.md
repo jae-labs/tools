@@ -101,7 +101,9 @@ module.ts                           Prisma Composer root module
 service.ts                          Prisma Compute service definition
 prisma.config.ts                    Prisma CLI and target configuration
 public/                             static assets
+.github/workflows/ci.yml            Pull request quality checks
 .github/workflows/prisma-deploy.yml CI checks and Prisma Compute deployment
+.github/dependabot.yml              Weekly npm and GitHub Actions updates
 ```
 
 ## Deployment
