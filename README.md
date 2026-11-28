@@ -13,9 +13,7 @@
 <a href="https://buymeacoffee.com/luiz1361"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-orange.svg?logo=buymeacoffee" alt="Buy Me A Coffee"></a>
 </p>
 
-Network diagnostics and utility suite powering [tools.justanother.engineer](https://tools.justanother.engineer).
-
-Includes **What Is My IP** (dual-stack IPv4/IPv6, Leaflet geolocation map, ISP/ASN, and HTTP headers), **Online Ping** (live probe-by-probe ICMP with TCP fallback), **Traceroute** (live hop-by-hop trace), **DNS Lookup**, **DNS Propagation** (live multi-region Prisma Compute + 9 global DNS resolvers with world map), **WHOIS**, **Port Check**, **Reverse Lookup** (PTR + FCrDNS), **Proxy Checker**, **RBL Blacklist Check** (25+ DNSBL & domain blocklist zones via DoH), **SPF Policy Tester** (Basic & Advanced RFC 7208 evaluator with macros, 10-lookup guard & custom policy override), **Country by IP**, **Multi-Region Speed Test** (Three.js 3D Prisma Compute topology + live throughput chart), **Network / Subnet Calculator**, **SLA Calculator** (Simple, Compare, and Reverse uptime/downtime nines calculator), **Epoch Converter** (live Unix ticker, multi-precision timestamps & human date conversion), **Days & Workdays Calculator** (add/subtract days or effort hours, between-dates diff, skip weekends & country holidays), **JSON Sort** (deep alphabetical key & optional array sorting), **XML to JSON**, **Base64 Encode / Decode**, **URL Encode / Decode**, **Crontab Converter** (human summary + next 10 run times), **Regex Tester** (live match highlighter, capture groups, substitution & token explainer), **ASCII Art Builder**, **IPv4 to IPv6 Converter** (`::ffff:`, 6to4, NAT64, ISATAP & reverse extraction), and **Unit Converter**.
+A collection of network diagnostics and everyday utilities, available at [tools.justanother.engineer](https://tools.justanother.engineer).
 
 ## Stack
 
