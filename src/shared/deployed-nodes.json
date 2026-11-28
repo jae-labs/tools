@@ -1,0 +1,8 @@
+{
+  "us-east-1": "https://sjj674o8101mnp0sznbkftkc.ewr.prisma.build",
+  "us-west-1": "https://w42stsx4lq9cs3ilzczu08q3.sjc.prisma.build",
+  "eu-west-3": "https://t072iguc1xsks41ubhnhbi11.cdg.prisma.build",
+  "eu-central-1": "https://cg5l6gtazzu04lvpkz4ycr8t.fra.prisma.build",
+  "ap-northeast-1": "https://gf7lx1qa22ut92qt4c1o4gxb.nrt.prisma.build",
+  "ap-southeast-1": "https://nc2rw4c2dkzbbchw05dcx0oc.sin.prisma.build"
+}
