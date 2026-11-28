@@ -67,6 +67,8 @@ Requires Node.js `>=22.18` (or `>=24.11`) and Bun.
    npm run dev
    ```
 
+   Run the Prisma CLI with Node.js as shown; the service itself runs in Bun. Forcing the CLI to run in Bun (`bun run --bun prisma dev`) fails with Composer 0.40 and Bun 1.4.2 because `console.Console` is undefined in the dev-converge worker.
+
 3. Open the local URL printed in the terminal, usually `http://localhost:3000`.
 
 4. Run the full verification suite before pushing.
